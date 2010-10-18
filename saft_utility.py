@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 import tempfile
+import traceback
 
 import cgpt_handler
 import chromeos_interface
@@ -52,6 +53,9 @@ SAFT_SCRIPT_TEMPLATE = '''
 #
 # TODO(vbendeb): instead of using the hardcoded device name look for block
 #                labeled  C-KEYFOB
+
+set -e
+
 saft_dev="/dev/${1}3"
 root_dev=$(rootdev -s)
 
@@ -64,7 +68,14 @@ else
 fi
 
 cd "${mount_point}%s"
+
+# Start our own X server to make it easier to control the screen
+X_PORT=1
+X :"${X_PORT}" -config saft.xorg.conf vt02 > /dev/null 2>&1 &
+xpid="$!"
+export DISPLAY=":${X_PORT}.0"
 ./%s --next_step
+kill "${xpid}"
 '''
 
 # Subdirectory to keep the state of this test over reboots. Created in the
@@ -149,6 +160,7 @@ class FirmwareTest(object):
         self.test_state_sequence = None
         self.kern_handler = None
         self.step_failed = False
+        self.window = None
 
     def _verify_fw_id(self, compare_to_file):
         '''Verify if the current firmware ID matches the contents a file.
@@ -318,6 +330,7 @@ class FirmwareTest(object):
         self.kern_handler.restore_kernel(section)
 
     def cgpt_test_start(self):
+        '''Set up CGPT test sequence.'''
         cgpth = cgpt_handler.CgptHandler(self.chros_if)
         cgpth.read_device_info(BASE_STORAGE_DEVICE)
 
@@ -333,6 +346,7 @@ class FirmwareTest(object):
         cgpth.set_partition(BASE_STORAGE_DEVICE, 'KERN-B', properties)
 
     def cgpt_test_1(self):
+        '''CGPT test checking the attributes settings by the firmware.'''
         expected_cgpt = {
             'KERN-A' : {'priority': 10, 'tries': 14, 'successful': 0},
             'KERN-B' : {'priority': 9, 'tries': 15, 'successful': 0}
@@ -341,10 +355,10 @@ class FirmwareTest(object):
         cgpth.read_device_info(BASE_STORAGE_DEVICE)
         for part, state in expected_cgpt.iteritems():
             props = cgpth.get_partition(BASE_STORAGE_DEVICE, part)
-            for property, value in state.iteritems():
-                if value != props[property]:
-                    self.shros_if.log('wrong partition %s value' % part)
-                    self.shros_if.log(sgpth.dump_partition(BASE_STORAGE_DEVICE,
+            for prop, value in state.iteritems():
+                if value != props[prop]:
+                    self.chros_if.log('wrong partition %s value' % part)
+                    self.chros_if.log(cgpth.dump_partition(BASE_STORAGE_DEVICE,
                                                            part))
                     self.step_failed = True
                     break
@@ -393,6 +407,12 @@ class FirmwareTest(object):
       '''
 
         this_step = self._get_step()
+
+        # Import when needed, because otherwise running test generates a
+        # warning exception about the unavailable display.
+        window = __import__('window')
+        self.window = window.GraphThread()
+        self.window.display_text("SAFT's performing step #%d " % this_step)
 
         if this_step == 0:
             shutil.copyfile(self.chros_if.acpi_file('FWID'),
@@ -465,6 +485,7 @@ class FirmwareTest(object):
             # make it easier to see SAFT results.
             self.chros_if.shut_down(os.path.join('/var', LOG_FILE))
 
+        self.window.stop()
         sys.exit(0)
 
 # Firmware self test instance controlling this module.
@@ -488,19 +509,19 @@ FST = FirmwareTest()
 # function.
 
 TEST_STATE_SEQUENCE = (
-    ('1:1:0:0:3', FST.set_try_fw_b),
-    ('1:2:0:0:3', None),
-    ('1:1:0:0:3', FST.corrupt_firmware, 'a'),
-    ('1:2:0:0:3', FST.restore_firmware, 'a'),
-    ('1:1:0:0:3', FST.corrupt_firmware, ('a', 'b')),
-    ('5:0:0:1:3', FST.restore_firmware, ('a', 'b')),
-    ('1:1:0:0:3', FST.corrupt_kernel, 'a'),
-    ('1:1:0:0:5', FST.corrupt_kernel, 'b'),
-    ('6:0:0:1:3', FST.restore_kernel, ('a', 'b')),
-    ('1:1:0:0:3', FST.cgpt_test_start),
-    ('1:1:0:0:3', FST.cgpt_test_1),
-    ('1:1:0:0:3', FST.revert_firmware),
-    ('1:1:0:0:3', None),
+    ('1:1:1:0:3', FST.set_try_fw_b),
+    ('1:2:1:0:3', None),
+    ('1:1:1:0:3', FST.corrupt_firmware, 'a'),
+    ('1:2:1:0:3', FST.restore_firmware, 'a'),
+    ('1:1:1:0:3', FST.corrupt_firmware, ('a', 'b')),
+    ('5:0:1:1:3', FST.restore_firmware, ('a', 'b')),
+    ('1:1:1:0:3', FST.corrupt_kernel, 'a'),
+    ('1:1:1:0:5', FST.corrupt_kernel, 'b'),
+    ('6:0:1:1:3', FST.restore_kernel, ('a', 'b')),
+    ('1:1:1:0:3', FST.cgpt_test_start),
+    ('1:1:1:0:3', FST.cgpt_test_1),
+    ('1:1:1:0:3', FST.revert_firmware),
+    ('1:1:1:0:3', None),
     )
 
 
@@ -588,7 +609,20 @@ def main(argv):
     if 'next_step' in opt_dictionary:
         if len(opt_dictionary) != 1:
             usage('--next_step (when specified) must be the only parameter', 1)
-        FST.next_step()
+        try:
+            FST.next_step()
+        except SystemExit:
+            pass  # No real exception, this is just an exit (for whatever
+                  # reason), gtk window already closed.
+        except:
+            # Whatever error that might be, gtk window must be shut.
+            FST.window.stop()
+
+            # Make sure exception information is saved in the log.
+            exc_type, exc_info, exc_trace = sys.exc_info()
+            print 'exception type:', str(exc_type)
+            print 'exception info:', str(exc_info)
+            traceback.print_tb(exc_trace)
         sys.exit(0)
 
     # check if all executables are available

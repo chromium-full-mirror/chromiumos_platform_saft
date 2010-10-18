@@ -12,6 +12,7 @@
 rm -rf /tmp/tmp*/var/.fw_test 2> /dev/null
 umount -d /tmp/tmp* 2> /dev/null
 
+TMPD_PATTERN='/tmp/tmp_saft.XXXX'
 DEFAULT_FLASH_DEVICE="${FLASH_DEVICE:=sdb}"
 set -e
 this_prog=$(realpath $0)
@@ -58,8 +59,10 @@ move_to_removable_device() {
     # Find its mountpoint, or mount it if not yet mounted.
     mp=$(mount | grep "${flash_root_partition}" | awk '{print $3}')
     if [ "${mp}" == "" ]; then
-        mp=$(mktemp -d)
+        mp=$(mktemp -d "${TMPD_PATTERN}")
         mount "${flash_root_partition}" "${mp}"
+    else
+        mount -o remount,exec "${mp}"
     fi
 
     # Copy the two directories SAFT test requires to the removable device to
@@ -99,7 +102,7 @@ run_tests() {
 
 check_and_set_saft_environment() {
     # Does the other side contain a valid kernel?
-    tmpd=$(mktemp -d)
+    tmpd=$(mktemp -d "${TMPD_PATTERN}")
     this_root=$(rootdev -s)
     this_kern=$(echo "${this_root}" | tr '35' '24')
     other_kern=$(echo "${this_kern}" | tr '24' '42')
