@@ -11,18 +11,35 @@ flashrom chip and to parse the flash rom image.
 See docstring for FlashromHandler class below.
 '''
 
+import os
 import struct
 
-class FvImage(object):
-    '''An object to hold names of matching signature and firmware sections.'''
+class FvSection(object):
+    '''An object to hold information about a firmware section.
+
+    This includes file names for the signature header and the body, and the
+    version number.
+    '''
 
     def __init__(self, sig_name, body_name):
-        self.sig_name = sig_name
-        self.body_name = body_name
+        self._sig_name = sig_name
+        self._body_name = body_name
+        self._version = -1  # Is not set on construction.
 
     def names(self):
-        return (self.sig_name, self.body_name)
+        return (self._sig_name, self._body_name)
 
+    def get_sig_name(self):
+        return self._sig_name
+
+    def get_body_name(self):
+        return self._body_name
+
+    def get_version(self):
+        return self._version
+
+    def set_version(self, version):
+        self._version = version
 
 class FlashromHandlerError(Exception):
     pass
@@ -35,6 +52,9 @@ class FlashromHandler(object):
 
     # File in the state directory to store public root key.
     PUB_KEY_FILE_NAME = 'root.pubkey'
+    FW_KEYBLOCK_FILE_NAME = 'firmware.keyblock'
+    FW_PRIV_DATA_KEY_FILE_NAME = 'firmware_data_key.vbprivk'
+    KERNEL_SUBKEY_FILE_NAME = 'kernel_subkey.vbpubk'
 
     def __init__(self):
     # make sure it does not accidentally overwrite the image.
@@ -43,11 +63,14 @@ class FlashromHandler(object):
         self.image = ''
         self.pub_key_file = ''
         self.fv_sections = {
-            'a': FvImage('VBOOTA', 'FVMAIN'),
-            'b': FvImage('VBOOTB', 'FVMAINB'),
+            'a': FvSection('VBOOTA', 'FVMAIN'),
+            'b': FvSection('VBOOTB', 'FVMAINB'),
             }
 
-    def init(self, flashrom_util_module, chros_if, pub_key_file=None):
+    def init(self, flashrom_util_module,
+             chros_if,
+             pub_key_file=None,
+             dev_key_path='./'):
         '''Flashrom handler initializer.
 
         Args:
@@ -59,6 +82,7 @@ class FlashromHandler(object):
         self.fum = flashrom_util_module.flashrom_util()
         self.chros_if = chros_if
         self.pub_key_file = pub_key_file
+        self.dev_key_path = dev_key_path
 
     def new_image(self, image_file=None):
         '''Parse the full flashrom image and store sections into files.
@@ -85,6 +109,12 @@ class FlashromHandler(object):
                 f = open(self.chros_if.state_dir_file(subsection_name), 'wb')
                 f.write(self.fum.get_section(self.image, subsection_name))
                 f.close()
+
+            # Now determine this section's version number.
+            vb_section = self.fum.get_section(
+                self.image, section.get_sig_name())
+
+            section.set_version(self.chros_if.retrieve_body_version(vb_section))
 
         if not self.pub_key_file:
             self._retrieve_pub_key()
@@ -141,9 +171,9 @@ class FlashromHandler(object):
 
         for section in self.fv_sections.itervalues():
             cmd = 'vbutil_firmware --verify %s --signpubkey %s  --fv %s' % (
-                self.chros_if.state_dir_file(section.sig_name),
+                self.chros_if.state_dir_file(section.get_sig_name()),
                 self.pub_key_file,
-                self.chros_if.state_dir_file(section.body_name))
+                self.chros_if.state_dir_file(section.get_body_name()))
             self.chros_if.run_shell_command(cmd)
 
     def _modify_section(self, section, delta):
@@ -164,7 +194,7 @@ class FlashromHandler(object):
                                        % section)
 
         # Get the appropriate section of the image.
-        subsection_name = self.fv_sections[section].body_name
+        subsection_name = self.fv_sections[section].get_body_name()
         body = self.fum.get_section(self.image, subsection_name)
 
         # Modify the byte in it within 5% of the section body.
@@ -212,3 +242,41 @@ class FlashromHandler(object):
             raise FlashromHandlerError(
                 'Attempt at using an uninitialized object')
         open(filename, 'w').write(self.image)
+
+    def get_section_version(self, section):
+        '''Retrieve version number of a firmware section'''
+        return self.fv_sections[section].get_version()
+
+    def re_sign_section(self, section, version):
+        '''Re-sign the firmware section using the supplied version number.'''
+        if self.get_section_version(section) == version:
+            return  # No version change, nothing to do.
+
+        fv_section = self.fv_sections[section]
+        sig_name = self.chros_if.state_dir_file(fv_section.get_sig_name())
+        sig_size = os.path.getsize(sig_name)
+
+        # Construct the command line
+        args = ['--vblock %s' % sig_name]
+        args.append('--keyblock %s' % os.path.join(
+                self.dev_key_path, self.FW_KEYBLOCK_FILE_NAME))
+        args.append('--fv %s' % self.chros_if.state_dir_file(
+                fv_section.get_body_name()))
+        args.append('--version %d' % version)
+        args.append('--kernelkey %s' % os.path.join(
+                self.dev_key_path, self.KERNEL_SUBKEY_FILE_NAME))
+        args.append('--signprivate %s' % os.path.join(
+                self.dev_key_path, self.FW_PRIV_DATA_KEY_FILE_NAME))
+        cmd = 'vbutil_firmware %s' % ' '.join(args)
+        self.chros_if.run_shell_command(cmd)
+
+        #  Pad the new signature.
+        new_sig = open(sig_name, 'a')
+        pad = ('%c' % 0xff) * (sig_size - os.path.getsize(sig_name))
+        new_sig.write(pad)
+        new_sig.close()
+
+        # Inject the new signature block into the image
+        new_sig = open(sig_name, 'r').read()
+        self.image = self.fum.put_section(
+            self.image, fv_section.get_sig_name(), new_sig)

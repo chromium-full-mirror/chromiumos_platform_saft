@@ -72,8 +72,14 @@ class TestKernelHandler(unittest.TestCase):
         self.kernel_file = self.chros_if.state_dir_file(KERNEL_FILE)
         self.backup_file = None
         self.device = None
+        self.pubkey_file = self.chros_if.state_dir_file(PUBKEY_FILE)
+        self.verify_cmd = 'vbutil_kernel --verify %s --signpubkey %s' % (
+            self.kernel_file, self.pubkey_file)
         self.stdout = sys.stdout
         sys.stdout = open('/dev/null', 'w')
+
+    def _get_kernel_cmd(self):
+        return 'dd if=%s of=%s' % (self.device, self.kernel_file)
 
     def set_kernel_device(self, section):
         '''Find out device storing a particular kernel.
@@ -110,21 +116,34 @@ class TestKernelHandler(unittest.TestCase):
         Confirm that verification fails after a kernel was corrupted and
         succeeds after the kernel was restored.
         '''
-        pubkey_file = self.chros_if.state_dir_file(PUBKEY_FILE)
-        verify_cmd = 'vbutil_kernel --verify %s --signpubkey %s' % (
-            self.kernel_file, pubkey_file)
         for section in SECTIONS:
-            get_kernel_key(section, pubkey_file)
+            get_kernel_key(section, self.pubkey_file)
             self.set_kernel_device(section)
-            get_kernel_cmd = 'dd if=%s of=%s' % (self.device, self.kernel_file)
             self.back_up_kernel()
             self.kernel_handler.corrupt_kernel(section)
-            self.chros_if.run_shell_command(get_kernel_cmd)
+            self.chros_if.run_shell_command(self._get_kernel_cmd())
             self.assertRaises(chromeos_interface.ChromeOSInterfaceError,
-                              self.chros_if.run_shell_command, verify_cmd)
+                              self.chros_if.run_shell_command, self.verify_cmd)
             self.kernel_handler.restore_kernel(section)
-            self.chros_if.run_shell_command(get_kernel_cmd)
-            self.chros_if.run_shell_command(verify_cmd)
+            self.chros_if.run_shell_command(self._get_kernel_cmd())
+            self.chros_if.run_shell_command(self.verify_cmd)
+            self.backup_file = None
+
+    def test_version_change(self):
+        for section in SECTIONS:
+            get_kernel_key(section, self.pubkey_file)
+            self.set_kernel_device(section)
+            self.back_up_kernel()
+            current_version = self.kernel_handler.get_version(section)
+            khandler = kernel_handler.KernelHandler()
+
+            for version in (current_version + 1, current_version):
+                self.kernel_handler.set_version(section, version)
+                khandler.init(self.chros_if)
+                self.assertEqual(khandler.get_version(section), version)
+                self.chros_if.run_shell_command(self._get_kernel_cmd())
+                self.chros_if.run_shell_command(self.verify_cmd)
+
             self.backup_file = None
 
     def tearDown(self):

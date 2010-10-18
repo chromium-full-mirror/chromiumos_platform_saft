@@ -9,6 +9,7 @@ import datetime
 import os
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
@@ -47,10 +48,14 @@ class ChromeOSInterface(object):
         '''
         self.state_dir = state_dir
 
-        if state_dir and log_file:
-            self.log_file = os.path.join(state_dir, log_file)
-        else:
-            self.log_file = None
+        if self.state_dir:
+            if not os.path.exists(self.state_dir):
+                try:
+                    os.mkdir(self.state_dir)
+                except OSError, err:
+                    raise ChromeOSInterfaceError(err)
+            if log_file:
+                self.log_file = os.path.join(state_dir, log_file)
 
     def target_hosted(self):
         '''Return True if running on a ChromeOS target.'''
@@ -78,16 +83,14 @@ class ChromeOSInterface(object):
             raise ChromeOSInterfaceError(
                 'ACPI directory %s not found' % self.acpi_dir)
 
-        if self.state_dir:
-            if os.path.exists(self.state_dir):
-                raise ChromeOSInterfaceError(
-                    'state directory %s exists' % self.state_dir)
-            try:
-                os.mkdir(self.state_dir)
-            except OSError, err:
-                raise ChromeOSInterfaceError(err)
+        if not self.state_dir:
+            self.state_dir = tempfile.mkdtemp(suffix='_saft')
         else:
-            self.state_dir = tempfile.mkdtemp()
+            # Wipe out state directory, to start the state machine clean.
+            shutil.rmtree(self.state_dir)
+            # And recreate it
+            self.init(self.state_dir, self.log_file)
+
         return self.state_dir
 
     def shut_down(self, new_log='/var/saft_log.txt'):
@@ -253,3 +256,30 @@ class ChromeOSInterface(object):
       # Not found, needs to be mounted
         self.run_shell_command('mount %s %s' % (dev, tmp_dir))
         return tmp_dir
+
+    def retrieve_body_version(self, blob):
+        '''Given a blob, retrieve body version.
+
+        Currently works for both, firmware and kernel blobs. Returns '-1' in
+        case the version can not be retrieved reliably.
+        '''
+        header_format = '<8s8sQ'
+        preamble_format = '<40sQ'
+        magic, _, kb_size = struct.unpack_from(header_format, blob)
+
+        if magic != 'CHROMEOS':
+            return -1  # This could be a corrupted version case.
+
+        _, version = struct.unpack_from(preamble_format, blob, kb_size)
+        return version
+
+    def read_partition(self, partition, size):
+        '''Read the requested partition, up to size bytes.'''
+        tmp_file = self.state_dir_file('part.tmp')
+        self.run_shell_command('dd if=%s of=%s bs=1 count=%d' % (
+                partition, tmp_file, size))
+        fileh = open(tmp_file, 'r')
+        data = fileh.read()
+        fileh.close()
+        os.remove(tmp_file)
+        return data
