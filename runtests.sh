@@ -22,6 +22,15 @@ else
     new_firmware=''
 fi
 
+# This hack has been borrowed from src/scripts/common.sh
+enable_rw_mount() {
+  local rootfs="$1"
+  local ro_compat_offset=$((0x464 + 3))  # Set 'highest' byte
+  printf '\000' |
+    sudo dd of="$rootfs" seek=${ro_compat_offset} \
+            conv=notrunc count=1 bs=1
+}
+
 on_removable_device() {
     # Check if the code is running off a removable device or not.
     # Print '1' or '0' respectively on the console.
@@ -56,6 +65,8 @@ move_to_removable_device() {
     fi
     flash_root_partition="/dev/${flash_device}${dev_num}"
 
+    enable_rw_mount "${flash_root_partition}"
+
     # Find its mountpoint, or mount it if not yet mounted.
     mp=$(mount | grep "${flash_root_partition}" | awk '{print $3}')
     if [ "${mp}" == "" ]; then
@@ -83,8 +94,8 @@ move_to_removable_device() {
 
 configure_gpt_settings() {
     # Let's keep it simple for now, partition 2 is the one to boot.
-    cgpt add -i 2 -T 5 -P 9 /dev/sda
-    cgpt add -i 4 -T 5 -P 5 /dev/sda
+    cgpt add -i 2 -T 5 -P 9 -S 1 /dev/sda
+    cgpt add -i 4 -T 5 -P 5 -S 1 /dev/sda
 }
 
 run_tests() {
@@ -93,6 +104,7 @@ run_tests() {
     ./test_saft_utility.py
     ./test_kernel_handler.py
     ./test_cgpt_handler.py
+    ./test_tpm_handler.py
 
     if [ -n "${new_firmware}" ]; then
         configure_gpt_settings
@@ -128,6 +140,7 @@ check_and_set_saft_environment() {
         echo 'Disabling rootfs verification on the flash device kernel'
         new_cmd_line_file="${tmpd}/cmdline"
         echo {$cmd_line} | sed '
+s/ ro / rw /
 s/dm_verity[^ ]\+//g
 s|verity /dev/sd%D%P /dev/sd%D%P ||
 s| root=/dev/dm-0 | root=/dev/sd%D%P |

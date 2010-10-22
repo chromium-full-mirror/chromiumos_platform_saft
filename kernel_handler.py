@@ -14,6 +14,11 @@ MAIN_STORAGE_DEVICE = '/dev/sda'
 KERNEL_BODY_MOD = 1
 KERNEL_VERSION_MOD = 2
 
+
+class KernelHandlerError(Exception):
+    pass
+
+
 class KernelHandler(object):
     '''An object to provide ChromeOS kernel related actions.
 
@@ -106,6 +111,8 @@ class KernelHandler(object):
 
     def set_version(self, section, version):
         '''Set version of this kernel blob and re-sign it.'''
+        if version < 0:
+            raise KernelHandlerError('Bad version value %d' % version)
         self._modify_kernel(section.upper(), version, KERNEL_VERSION_MOD)
 
     def init (self, chros_if):
