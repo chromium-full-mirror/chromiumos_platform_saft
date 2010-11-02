@@ -136,10 +136,10 @@ check_and_set_saft_environment() {
     dd if="${flash_kernel_dev}" of="${other_kern_file}"
     cmd_line=$(vbutil_kernel --verify "${other_kern_file}" --verbose | tail -1)
 
-    if echo $cmd_line | grep -q 'root=/dev/dm'; then
+    if echo "${cmd_line}" | grep -q 'root=/dev/dm'; then
         echo 'Disabling rootfs verification on the flash device kernel'
         new_cmd_line_file="${tmpd}/cmdline"
-        echo {$cmd_line} | sed '
+        echo "${cmd_line}" | sed '
 s/ ro / rw /
 s/dm_verity[^ ]\+//g
 s|verity /dev/sd%D%P /dev/sd%D%P ||

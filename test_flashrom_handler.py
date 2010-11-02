@@ -92,7 +92,7 @@ class TestFlashromHandler(unittest.TestCase):
             self.fh.new_image(backup)
             self.fh.verify_image()
             new_version = self.fh.get_section_version(section) + 1
-            self.fh.re_sign_section(section, new_version)
+            self.fh.set_section_version(section, new_version)
             self.fh.dump_whole(backup)
             self.fh.new_image(backup)
             self.fh.verify_image()

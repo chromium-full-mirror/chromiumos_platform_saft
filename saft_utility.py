@@ -305,15 +305,21 @@ class FirmwareTest(object):
             self.tpm_handler = tpm_handler
             self.tpm_handler.init(self.chros_if)
 
-        if self.kern_handler and self.tpm_handler:
+        if self.tpm_handler:
             if not self.chros_if.is_removable_device(self.base_partition):
-                # On each non USB flash rooted start confirm that kernel
-                # versions and TPM setting match.
-                vers_a = self.kern_handler.get_version('a')
-                vers_b = self.kern_handler.get_version('b')
-                if not self.tpm_handler.kernel_version_good(vers_a, vers_b):
-                    raise FwError('TPM kernel version mismatch (%d %d %s)' % (
+                # On each non USB flash rooted start confirm that kernel and
+                # BIOS versions and TPM setting match.
+                vers_a = FLASHROM_HANDLER.get_version('a')
+                vers_b = FLASHROM_HANDLER.get_version('b')
+                if not self.tpm_handler.fw_version_good(vers_a, vers_b):
+                    raise FwError('TPM firmware version mismatch (%d %d %s)' % (
                             vers_a, vers_b, self.base_partition))
+                if self.kern_handler:
+                    vers_a = self.kern_handler.get_version('a')
+                    vers_b = self.kern_handler.get_version('b')
+                    if not self.tpm_handler.kernel_version_good(vers_a, vers_b):
+                        raise FwError('TPM kernel version mismatch (%d %d %s)' % (
+                                vers_a, vers_b, self.base_partition))
 
     def set_try_fw_b(self):
         '''Request running firmware B on the next restart.'''
@@ -329,14 +335,12 @@ class FirmwareTest(object):
     def restore_firmware(self, section):
         '''Restore the requested firmware section (previously corrupted).'''
         self.chros_if.log('Restoring firmware %s' % section)
-        FLASHROM_HANDLER.new_image()
         FLASHROM_HANDLER.restore_firmware(section)
 
     @allow_multiple_section_input
     def corrupt_firmware(self, section):
         '''Corrupt the requested firmware section.'''
         self.chros_if.log('Corrupting firmware %s' % section)
-        FLASHROM_HANDLER.new_image()
         FLASHROM_HANDLER.corrupt_firmware(section)
 
     @allow_multiple_section_input
@@ -389,8 +393,16 @@ class FirmwareTest(object):
         '''Decrement kernel version for the requested section.'''
         new_version = self.kern_handler.get_version(section) - 1
         self.chros_if.log(
-            'setting section %s version to %d' % (section, new_version))
+            'setting kernel section %s version to %d' % (section, new_version))
         self.kern_handler.set_version(section, new_version)
+
+    def move_firmware_backward(self, section):
+        '''Decrement firmware version for the requested section.'''
+        new_version = FLASHROM_HANDLER.get_section_version(section) - 1
+        self.chros_if.log(
+            'setting firmware section %s version to %d' % (
+                section, new_version))
+        FLASHROM_HANDLER.set_section_version(section, new_version, True)
 
     def jump_kernels_forward(self):
         '''Add two to both kernels' versions.
@@ -405,21 +417,47 @@ class FirmwareTest(object):
                 'setting section %s version to %d' % (section, new_version))
             self.kern_handler.set_version(section, new_version)
 
+    def jump_firmwares_forward(self):
+        '''Add two to both firmwares' versions.
+
+        This compensates for the previous decrement and increases the version
+        number by one as compared to the original state (at the start of the
+        test).
+        '''
+        for section in ('a', 'b'):
+            new_version = FLASHROM_HANDLER.get_section_version(section) + 2
+            self.chros_if.log(
+                'setting firmware section %s version to %d' % (
+                    section, new_version))
+            FLASHROM_HANDLER.set_section_version(section, new_version, True)
+
     def terminate_tpm_tests(self):
         '''Restore TPM and kernel states.
 
-        Move kernel versions to where they were before SAFT started, set the
-        TPM kernel version to the biggest of the two kernels and prevent
+        Move kernel and firmware versions to where they were before SAFT
+        started. Set the TPM's values of kernel and firmware versions to the
+        lowest of the two kernels/firmwares available on the system. Prevent
         future TPM write accesses by restoring the upstart file.
         '''
-        new_tpm_version  = 0
+        new_tpm_kern_version  = 0xffff
+        new_tpm_fw_version  = 0xffff
         for section in ('a', 'b'):
             new_version = self.kern_handler.get_version(section) - 1
             self.chros_if.log(
-                'setting section %s version to %d' % (section, new_version))
+                'setting kernel section %s version to %d' % (
+                    section, new_version))
             self.kern_handler.set_version(section, new_version)
-            new_tpm_version = max(new_version, new_tpm_version)
-        self.tpm_handler.set_kernel_version(new_tpm_version)
+            new_tpm_kern_version = min(new_version, new_tpm_kern_version)
+
+            new_version = FLASHROM_HANDLER.get_section_version(section)  - 1
+            self.chros_if.log(
+                'setting firmware section %s version to %d' % (
+                    section, new_version))
+            FLASHROM_HANDLER.set_section_version(section, new_version, True)
+            new_tpm_fw_version = min(new_version, new_tpm_fw_version)
+
+        self.tpm_handler.set_kernel_version(new_tpm_kern_version)
+        self.tpm_handler.set_fw_version(new_tpm_fw_version)
         self.tpm_handler.disable_write_access()
 
     def revert_firmware(self):
@@ -529,6 +567,7 @@ class FirmwareTest(object):
             self.finish_saft(False)
 
         if action:
+            FLASHROM_HANDLER.new_image()
             if len(test_state_tuple) > 2:
                 self.chros_if.log('calling %s with parameter %s' % (
                         str(action), str(test_state_tuple[2])))
@@ -602,11 +641,14 @@ TEST_STATE_SEQUENCE = (
     ('8:0:1:1:3', FST.prepare_tpm_tests),              # Step 10
     ('1:1:1:0:5', FST.move_kernel_backward, 'b'),
     ('6:0:1:1:3', FST.jump_kernels_forward),
+    ('1:1:1:0:3', FST.move_firmware_backward, 'a'),
+    ('1:2:1:0:3', FST.move_firmware_backward, 'b'),
+    ('5:0:1:1:3', FST.jump_firmwares_forward),         # Step 15
     ('1:1:1:0:3', FST.request_recovery_boot),
     ('8:0:1:1:3', FST.terminate_tpm_tests),
-    ('1:1:1:0:3', FST.cgpt_test_start),                # Step 15
+    ('1:1:1:0:3', FST.cgpt_test_start),
     ('1:1:1:0:3', FST.cgpt_test_1),
-    ('1:1:1:0:3', FST.revert_firmware),
+    ('1:1:1:0:3', FST.revert_firmware),                # Step 20
     ('1:1:1:0:3', None),
     )
 

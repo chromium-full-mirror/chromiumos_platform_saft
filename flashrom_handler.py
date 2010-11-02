@@ -247,11 +247,13 @@ class FlashromHandler(object):
         '''Retrieve version number of a firmware section'''
         return self.fv_sections[section].get_version()
 
-    def re_sign_section(self, section, version):
+    def set_section_version(self, section, version, write_through=False):
         '''Re-sign the firmware section using the supplied version number.'''
         if self.get_section_version(section) == version:
             return  # No version change, nothing to do.
-
+        if version < 0:
+            raise FlashromHandlerError(
+                'Attempt to set version %d on section %s' % (version, section))
         fv_section = self.fv_sections[section]
         sig_name = self.chros_if.state_dir_file(fv_section.get_sig_name())
         sig_size = os.path.getsize(sig_name)
@@ -280,3 +282,5 @@ class FlashromHandler(object):
         new_sig = open(sig_name, 'r').read()
         self.image = self.fum.put_section(
             self.image, fv_section.get_sig_name(), new_sig)
+        if write_through:
+            self.fum.write_partial(self.image, (fv_section.get_sig_name(), ))

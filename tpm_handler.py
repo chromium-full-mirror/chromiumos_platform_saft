@@ -110,6 +110,9 @@ class TpmHandler(object):
     def get_kernel_version(self):
         return self.nvrams['kernel'].get_body_version()
 
+    def set_fw_version(self, new_version):
+        return self.nvrams['bios'].set_body_version(new_version)
+
     def set_kernel_version(self, new_version):
         return self.nvrams['kernel'].set_body_version(new_version)
 
