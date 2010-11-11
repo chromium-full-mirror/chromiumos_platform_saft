@@ -16,6 +16,7 @@ import tempfile
 import traceback
 
 import cgpt_handler
+import cgpt_state
 import chromeos_interface
 import flashrom_handler
 import kernel_handler
@@ -100,8 +101,10 @@ cgpt blkid flashrom reboot_mode realpath rootdev vbutil_firmware vbutil_kernel
 mosys
 '''
 
+
 FLASHROM_HANDLER = flashrom_handler.FlashromHandler()
 CHROS_IF = chromeos_interface.ChromeOSInterface(__name__ != '__main__')
+cgpt_st = cgpt_state.CgptState('COMPLETE', CHROS_IF, BASE_STORAGE_DEVICE)
 
 def allow_multiple_section_input(image_operator):
     @functools.wraps(image_operator)
@@ -275,6 +278,22 @@ class FirmwareTest(object):
             state_root = '%s%s' % (tmp_dir, env_root)
 
         self.chros_if.init(os.path.join(state_root, STATE_SUBDIR), LOG_FILE)
+
+    def _cmp_boot_vector(self, vector1, vector2):
+        '''Compare if the two boot vectors are the same
+
+        Note: a wildcard (*) will match any value.
+
+        '''
+        list1 = vector1.split(cgpt_st.DELIMIT)
+        list2 = vector1.split(cgpt_st.DELIMIT)
+        if len(list1) != len(list2):
+            raise FwError('Boot vectors (%s %s) should be of the same length'
+                          % (vecotr1, vector2))
+        for i in range(len(list1)):
+            if list1[i] != list2[i] and list1[i] != '*' and list2[i] != '*':
+                return False
+        return True
 
     def init(self, progname, chros_if,
              kern_handler=None, state_sequence=None, tpm_handler=None):
@@ -515,6 +534,7 @@ class FirmwareTest(object):
         shutil.copyfile(fw_image, self.chros_if.state_dir_file(FW_COPY_FILE))
 
         self._set_step(0)
+        cgpt_st.set_step(0)
 
     def next_step(self):
         '''Function to execute a single SAFT step.
@@ -530,7 +550,6 @@ class FirmwareTest(object):
         # warning exception about the unavailable display.
         window = __import__('window')
         self.window = window.GraphThread()
-        self.window.display_text("SAFT's performing step #%d " % this_step)
 
         if this_step == 0:
             shutil.copyfile(self.chros_if.acpi_file('FWID'),
@@ -544,6 +563,15 @@ class FirmwareTest(object):
         test_state_tuple = self.test_state_sequence[this_step]
         expected_vector = test_state_tuple[0]
         action = test_state_tuple[1]
+
+        # Display cgpt sub step if the action is a cgpt test
+        step_display = "SAFT's performing step #%d"
+        step_tuple = (this_step,)
+        if action == cgpt_st.test_loop:
+            step_display += " (cgpt test step #%d)"
+            step_tuple += (cgpt_st.get_step(),)
+        self.window.display_text(step_display % step_tuple)
+
         boot_vector = self.chros_if.boot_state_vector()
         self.chros_if.log('\nRebooted into state %s on step %d' % (
                 boot_vector, this_step))
@@ -556,7 +584,7 @@ class FirmwareTest(object):
                 self.chros_if.log('startup log contents:')
                 self.chros_if.log(contents)
 
-        if boot_vector != expected_vector:
+        if not self._cmp_boot_vector(boot_vector, expected_vector):
             self.chros_if.log('Error: Wrong boot vector, %s was expected'
                 % expected_vector)
             self.finish_saft(False)
@@ -566,9 +594,12 @@ class FirmwareTest(object):
             self.chros_if.log('Error: Wrong FWID value')
             self.finish_saft(False)
 
+        inc_step = 1
         if action:
             FLASHROM_HANDLER.new_image()
-            if len(test_state_tuple) > 2:
+            if action == cgpt_st.test_loop:
+                inc_step = action()
+            elif len(test_state_tuple) > 2:
                 self.chros_if.log('calling %s with parameter %s' % (
                         str(action), str(test_state_tuple[2])))
                 action(test_state_tuple[2])
@@ -578,7 +609,7 @@ class FirmwareTest(object):
             if self.step_failed:
                 self.finish_saft(False)
 
-        self._set_step(this_step + 1)
+        self._set_step(this_step + inc_step)
         self.chros_if.run_shell_command('reboot')
 
     def finish_saft(self, success):
@@ -646,10 +677,9 @@ TEST_STATE_SEQUENCE = (
     ('5:0:1:1:3', FST.jump_firmwares_forward),         # Step 15
     ('1:1:1:0:3', FST.request_recovery_boot),
     ('8:0:1:1:3', FST.terminate_tpm_tests),
-    ('1:1:1:0:3', FST.cgpt_test_start),
-    ('1:1:1:0:3', FST.cgpt_test_1),
-    ('1:1:1:0:3', FST.revert_firmware),                # Step 20
-    ('1:1:1:0:3', None),
+    ('*:*:*:*:*', cgpt_st.test_loop),
+    ('1:1:1:0:3', FST.revert_firmware),
+    ('1:1:1:0:3', None),                               # Step 20
     )
 
 

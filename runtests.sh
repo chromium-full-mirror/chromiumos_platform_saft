@@ -105,6 +105,7 @@ run_tests() {
     ./test_kernel_handler.py
     ./test_cgpt_handler.py
     ./test_tpm_handler.py
+    ./test_cgpt_state.py
 
     if [ -n "${new_firmware}" ]; then
         configure_gpt_settings
