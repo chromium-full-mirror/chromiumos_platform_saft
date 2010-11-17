@@ -80,6 +80,24 @@ class TestUpstartHandler(unittest.TestCase):
                           saft_utility.RetriveSaftConfDefinion,
                           'dummy_name')
 
+    def test_cmp_boot_vector(self):
+        '''test _cmp_boot_vector works correctly with '*' wildcards'''
+        self.test_boot_vectors = (
+            ('1:1:1:0:3', '1:1:1:0:3', True),
+            ('5:0:0:1:3', '5:0:0:1:3', True),
+            ('6:0:0:1:3', '6:0:*:1:3', True),
+            ('8:0:*:1:3', '8:0:0:1:3', True),
+            ('1:2:1:0:3', '*:*:*:*:*', True),
+            ('1:1:1:0:3', '1:1:0:0:3', False),
+            ('5:0:0:1:3', '6:0:0:1:3', False),
+            ('6:0:0:1:3', '8:0:*:1:3', False),
+            ('1:1:1:0:5', '5:1:0:0:5', False),
+            )
+        for vecs in self.test_boot_vectors:
+            v1, v2, expected_result = vecs
+            result = self.fst._cmp_boot_vector(v1, v2)
+            self.assertEqual(result, expected_result)
+
     def tearDown(self):
         ChrosIf.shut_down()
 

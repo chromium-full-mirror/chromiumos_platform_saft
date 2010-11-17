@@ -286,7 +286,7 @@ class FirmwareTest(object):
 
         '''
         list1 = vector1.split(cgpt_st.DELIMIT)
-        list2 = vector1.split(cgpt_st.DELIMIT)
+        list2 = vector2.split(cgpt_st.DELIMIT)
         if len(list1) != len(list2):
             raise FwError('Boot vectors (%s %s) should be of the same length'
                           % (vecotr1, vector2))
