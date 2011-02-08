@@ -15,9 +15,9 @@ umount -d /tmp/tmp* 2> /dev/null
 TMPD_PATTERN='/tmp/tmp_saft.XXXX'
 DEFAULT_FLASH_DEVICE="${FLASH_DEVICE:=sdb}"
 set -e
-this_prog=$(realpath $0)
+this_prog=$(readlink -f $0)
 if [ -n "$1" ]; then
-    new_firmware=$(realpath $1)
+    new_firmware=$(readlink -f $1)
 else
     new_firmware=''
 fi
@@ -78,7 +78,7 @@ move_to_removable_device() {
 
     # Copy the two directories SAFT test requires to the removable device to
     # the same path we are in on the root device now.
-    my_root=$(realpath .)
+    my_root=$(readlink -f .)
     dest="${mp}${my_root}"
     if [ ! -d "${dest}" ]; then
         mkdir -p "${dest}"

@@ -97,7 +97,7 @@ BASE_STORAGE_DEVICE = '/dev/sda'
 
 # The list of shell executables necessary for this program to work.
 REQUIRED_PROGRAMS = '''
-cgpt blkid flashrom reboot_mode realpath rootdev vbutil_firmware vbutil_kernel
+cgpt blkid flashrom reboot_mode readlink rootdev vbutil_firmware vbutil_kernel
 mosys
 '''
 
