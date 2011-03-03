@@ -217,16 +217,13 @@ class flashrom_util(object):
         self.bios_layout = {}
         self.os_if = chromeos_interface.ChromeOSInterface(True)
         self.os_if.init(tempfile.gettempdir())
+        self._target_command = ''
         self._enable_bios_access()
 
     def _enable_bios_access(self):
         if not self.os_if.target_hosted():
             return
-        value = int(self.os_if.run_shell_command_get_output(
-            'iotools mmio_read32 0xfed1f410')[0], 0)
-        value = (value & 0xffff0000) + 0x460
-        self.os_if.run_shell_command(
-            'iotools mmio_write32 0xfed1f410 0x%x' % value)
+        self._target_command = '-p internal:bus=spi'
 
     def get_temp_filename(self, prefix):
         ''' (internal) Returns name of a temporary file in self.tmp_root '''
@@ -297,7 +294,7 @@ class flashrom_util(object):
         Returns the data read from flash ROM, or empty string for other error.
         '''
         tmpfn = self.get_temp_filename('rd_')
-        cmd = 'flashrom -r "%s"' % (tmpfn)
+        cmd = 'flashrom %s -r "%s"' % (self._target_command, tmpfn)
         if self.verbose:
             print 'flashrom_util.read_whole(): ', cmd
 
@@ -324,8 +321,8 @@ class flashrom_util(object):
         open(tmpfn, 'wb').write(base_image)
         layout_fn = self.create_layout_file(layout_map)
 
-        cmd = 'flashrom -l "%s" -i %s -w "%s"' % (
-                layout_fn, ' -i '.join(write_list), tmpfn)
+        cmd = 'flashrom %s -l "%s" -i %s -w "%s"' % (
+                self._target_command, layout_fn, ' -i '.join(write_list), tmpfn)
         if self.verbose:
             print 'flashrom.write_partial(): ', cmd
 
