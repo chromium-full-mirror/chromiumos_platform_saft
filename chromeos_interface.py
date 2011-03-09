@@ -59,7 +59,8 @@ class ChromeOSInterface(object):
 
     def target_hosted(self):
         '''Return True if running on a ChromeOS target.'''
-        return 'chromeos' in open('/proc/version_signature', 'r').read()
+        signature = open('/proc/version_signature', 'r').read()
+        return re.search(r'chrom(ium|e)os', signature, re.IGNORECASE) != None
 
     def state_dir_file(self, file_name):
         '''Get a full path of a file in the state directory.'''

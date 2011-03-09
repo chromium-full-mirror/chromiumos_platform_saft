@@ -227,6 +227,36 @@ class FlashromHandler(object):
         subsection_name = self.restore_section(section)
         self.fum.write_partial(self.image, (subsection_name, ))
 
+    def firmware_sections_equal(self):
+        '''Check if firmware sections A and B are equal.
+
+        This function presumes that the entire BIOS image integrity has been
+        verified, so different signature sections mean different images and
+        vice versa.
+        '''
+        sig_a = self.fum.get_section(self.image,
+                                      self.fv_sections['a'].get_sig_name())
+        sig_b = self.fum.get_section(self.image,
+                                      self.fv_sections['b'].get_sig_name())
+        return sig_a == sig_b
+
+    def copy_from_to(self, src, dst):
+        '''Copy one firmware image section to another.
+
+        This function copies both signature and body of one firmware section
+        into another. After this function runs both sections are identical.
+        '''
+        src_sect = self.fv_sections[src]
+        dst_sect = self.fv_sections[dst]
+        self.image = self.fum.put_section(
+            self.image,
+            dst_sect.get_body_name(),
+            self.fum.get_section(self.image, src_sect.get_body_name()))
+        self.image = self.fum.put_section(
+            self.image,
+            dst_sect.get_sig_name(),
+            self.fum.get_section(self.image, src_sect.get_sig_name()))
+
     def write_whole(self):
         '''Write the whole image into the flashrom.'''
 

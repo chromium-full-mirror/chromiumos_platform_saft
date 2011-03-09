@@ -798,6 +798,15 @@ def main(argv):
         usage(retv=1)
 
     FST.init_fw_test(opt_dictionary, CHROS_IF)
+
+    if not FLASHROM_HANDLER.firmware_sections_equal():
+        # This is a temporary measure needed to address the fact that the
+        # development BIOS image is built with 'normal' firmware in section B
+        # and 'development' firmware in section A. SAFT operation requires
+        # 'normal' flavor in both sections. Note that this fix does not affect
+        # the file of the new image, only the flashrom contents.
+        CHROS_IF.log('modify firmware A to match B')
+        FLASHROM_HANDLER.copy_from_to('b', 'a')
     CHROS_IF.log('program the new image')
     FLASHROM_HANDLER.write_whole()
     CHROS_IF.log('restart')
