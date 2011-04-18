@@ -14,12 +14,125 @@ import subprocess
 import tempfile
 import time
 
-# Source of ACPI information on ChromeOS machines.
-ACPI_DIR = '/sys/devices/platform/chromeos_acpi'
-
 class ChromeOSInterfaceError(Exception):
     '''ChromeOS interface specific exception.'''
     pass
+
+class Crossystem(object):
+    '''A wrapper for the crossystem utility.'''
+
+    def init(self, cros_if):
+        self.cros_if = cros_if
+
+    def __getattr__(self, name):
+        '''
+        Retrieve a crosssystem attribute.
+
+        Attempt to access crossystemobject.name will invoke `crossystem name'
+        and return the stdout as the value.
+        '''
+        return self.cros_if.run_shell_command_get_output(
+            'crossystem %s' % name)[0]
+
+    def __setattr__(self, name, value):
+        if name in ('cros_if',):
+            self.__dict__[name] = value
+        else:
+            self.cros_if.run_shell_command('crossystem "%s=%s"' % (name, value))
+
+
+    def get_boot_vector_base(self):
+        '''
+        Convert system state into a legacy boot vector base.
+
+        The first three legacy boot vector digits are the boot vector base
+        (the entire vector consists of 5 digits). They used to be reported by
+        the BIOS through ACPI, but that scheme has been superseded by the
+        'crossystem' interface.
+
+        The digits of the boot vector base have the following significance
+
+        - first digit -
+        1 - normal boot
+        2 - developer mode boot
+        3 - recovery initialed by pressing the recovery button
+        4 - recovery from developer mode warning screen
+        5 - recovery caused by both firmware images being invalid
+        6 - recovery caused by both kernel images being invalid
+
+        - second digit -
+        0 - recovery firmware
+        1 - rewritable firmware A
+        2 - rewritable firmware B
+
+        - third digit -
+        0 - Read only (recovery) EC firmware
+        1 - rewritable EC firmware
+
+
+        This function uses a three tuple of dictionaries to map current system
+        state as reported by 'crossystem' into the 'legacy' boot vector
+        digits.
+
+        Each tuple element is a dictionary, where the key is the 'legacy'
+        representation of the state, and the value is a yet another dictionary
+        of name-value pairs.
+
+        If all name-value pairs match those in the crossystem output, the
+        legacy representation number is returned as the appropriate vector
+        number.
+
+        The function returns a list of three digits in symbolic representation.
+
+        Should it be impossible to interpret the state, the function returns a
+        partially built list, which is an indication of a problem for the
+        caller (list shorter than 3 elements).
+        '''
+
+        vector_maps = (
+            { # first vector position
+                '1': {
+                    'devsw_boot': '0',
+                    'recoverysw_boot': '0',
+                    'recovery_reason' : '0',
+                    'tried_fwb' : '0',
+                    },
+                },
+            { # second vector position
+                '0': {'mainfw_type': 'recovery',},
+                '1': {
+                    'mainfw_type': 'normal',
+                    'mainfw_act': 'A'
+                    },
+                '2': {
+                    'mainfw_type': 'normal',
+                    'mainfw_act': 'B'
+                    },
+                },
+            { # third vector position
+                '0': {'ecfw_act': 'RO',},
+                '1': {'ecfw_act': 'RW',},
+                },
+        )
+
+        boot_vector = []
+
+        for vector_map in vector_maps:
+            for (digit, values) in vector_map.iteritems():
+                for (name, value) in values.iteritems():
+                    if self.__getattr__(name) != value:
+                        break
+                else:
+                    boot_vector.append(digit)
+                    break
+
+        return boot_vector
+
+    def dump(self):
+        '''Dump all values as multiline text.'''
+        return '\n'.join(self.cros_if.run_shell_command_get_output(
+            'crossystem'))
+
 
 class ChromeOSInterface(object):
     '''An object to encapsulate OS services functions.'''
@@ -30,10 +143,11 @@ class ChromeOSInterface(object):
         The only parameter is the Boolean 'silent', when True the instance
         does not duplicate log messages on the console.
         '''
+
         self.silent = silent
         self.state_dir = None
         self.log_file = None
-        self.acpi_dir = ACPI_DIR
+        self.cs = Crossystem()
 
     def init(self, state_dir=None, log_file=None):
         '''Initialize the ChromeOS interface object.
@@ -46,6 +160,8 @@ class ChromeOSInterface(object):
 
         Default argument values support unit testing.
         '''
+
+        self.cs.init(self)
         self.state_dir = state_dir
 
         if self.state_dir:
@@ -66,10 +182,6 @@ class ChromeOSInterface(object):
         '''Get a full path of a file in the state directory.'''
         return os.path.join(self.state_dir, file_name)
 
-    def acpi_file(self, file_name):
-        '''Get a full path of a file in the ACPI directory.'''
-        return os.path.join(self.acpi_dir, file_name)
-
     def init_environment(self):
         '''Initialize Chrome OS interface environment.
 
@@ -79,10 +191,6 @@ class ChromeOSInterface(object):
 
         Return the state directory name.
         '''
-
-        if self.target_hosted() and not os.path.exists(self.acpi_dir):
-            raise ChromeOSInterfaceError(
-                'ACPI directory %s not found' % self.acpi_dir)
 
         if not self.state_dir:
             self.state_dir = tempfile.mkdtemp(suffix='_saft')
@@ -170,6 +278,9 @@ class ChromeOSInterface(object):
         Returns True if the device is removable, False if not.
         '''
 
+        if not self.target_hosted():
+            return False
+
         # Drop trailing digit(s) and letter(s) (if any)
         dev_name_stripper = re.compile('[0-9].*$')
 
@@ -195,34 +306,22 @@ class ChromeOSInterface(object):
     def boot_state_vector(self):
         '''Read and return to caller a string describing the system state.
 
-        The string has a form of x:x:x:<removable>:<partition_number>, where
-        x' represent contents of the appropriate BINF files as reported by
-        ACPI, <removable> is set to 1 or 0 depending if the root device is
-        removable or not, and <partition number> is the last element of the
-        root device name, designating the partition where the root fs is
-        mounted.
+        The string has a form of x0:x1:x2:<removable>:<partition_number>,
+        where the field meanings of X# are described in the
+        Crossystem.get_boot_vector_base() docstring above.
+
+        <removable> is set to 1 or 0 depending if the root device is removable
+        or not, and <partition number> is the last element of the root device
+        name, designating the partition where the root fs is mounted.
 
         This vector fully describes the way the system came up.
         '''
 
-        binf_fname_template = 'BINF.%d'
-        state = []
-        for index in range(3):
-            fname = os.path.join(self.acpi_dir, binf_fname_template % index)
-            max_wait = 30
-            cycles = 0
-            # In some cases (for instance when running off the flash file
-            # system) the ACPI files go not get created right away. Let's give
-            # it some time to settle.
-            while not os.path.exists(fname):
-                if cycles == max_wait:
-                    self.log('%s is not present' % fname)
-                    raise AssertionError
-                time.sleep(1)
-                cycles += 1
-            if cycles:
-                self.log('ACPI took %d cycles' % cycles)
-            state.append(open(fname, 'r').read())
+        state = self.cs.get_boot_vector_base()
+
+        if len(state) != 3:
+            raise ChromeOSInterfaceError(self.cs.dump())
+
         root_dev = self.get_root_dev()
         state.append('%d' % int(self.is_removable_device(root_dev)))
         state.append('%s' % root_dev[-1])

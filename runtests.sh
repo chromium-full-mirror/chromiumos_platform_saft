@@ -31,6 +31,17 @@ enable_rw_mount() {
             conv=notrunc count=1 bs=1
 }
 
+target_hosted () {
+    local vers_sig='/proc/version_signature'
+    if [ -f "${vers_sig}" ]; then
+        if egrep -iq 'chrom.*os' "${vers_sig}"; then
+            echo '1'
+            return
+        fi
+    fi
+    echo '0'
+}
+
 on_removable_device() {
     # Check if the code is running off a removable device or not.
     # Print '1' or '0' respectively on the console.
@@ -39,8 +50,12 @@ on_removable_device() {
         rootd=$(rootdev -s)
     fi
     blockd=$(echo "${rootd}"  | sed 's|.*/\([^/0-9]\+\)[0-9]\+|\1|')
-    removable=$(cat /sys/block/"${blockd}"/removable)
-    echo "${removable}"
+    removable="/sys/block/"${blockd}"/removable"
+    if [ -f "${removable}" ]; then
+        cat "${removable}"
+    else
+        echo '0'
+    fi
 }
 
 move_to_removable_device() {
@@ -100,6 +115,9 @@ configure_gpt_settings() {
 
 run_tests() {
     ./test_chromeos_interface.py
+    if [ "$(target_hosted)" == "0" ]; then
+        return
+    fi
     ./test_flashrom_handler.py "${new_firmware}"
     ./test_saft_utility.py
     ./test_kernel_handler.py
@@ -155,7 +173,7 @@ s/dm="[^"]\+" //' > "${new_cmd_line_file}"
 }
 
 cd $(dirname ${this_prog})
-if [ "$(on_removable_device)" == "0" ]; then
+if [ "$(on_removable_device)" == "0" -a "$(target_hosted)" == "1" ]; then
     check_and_set_saft_environment
     move_to_removable_device
     exit 0

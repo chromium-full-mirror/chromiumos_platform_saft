@@ -5,12 +5,77 @@
 
 '''Unittest wrapper for chromeos_interface.py.'''
 
+import os
 import subprocess
+import tempfile
 import unittest
 
 import chromeos_interface
 
-CHROS_IF = chromeos_interface.ChromeOSInterface(True)
+# A set of crossystem output values pertinent to the tests.
+CROSSYSTEM_SAMPLE = {
+    'devsw_boot': '0',
+    'recoverysw_boot': '0',
+    'recovery_reason': '0',
+    'tried_fwb': '0',
+    'fwid': 'Alex.03.61.0734.0055G1.0020',
+    'mainfw_act': 'A',
+    'mainfw_type': 'normal',
+    'ecfw_act': 'RW',
+    'fwb_tries': '0',
+}
+
+class StdOut(object):
+    '''
+    An object to simulate the stdout file returned by subprocess.Popen().
+
+    @text - a potentially multiline string to represent the expected output of
+            the command.
+    '''
+
+    def __init__(self, text):
+        (fd, self.tmp_file) = tempfile.mkstemp()
+        os.write(fd, text)
+        os.close(fd)
+        self.stdout = open(self.tmp_file, 'r')
+
+    def __del__(self):
+        self.stdout.close()
+        os.remove(self.tmp_file)
+
+
+class CrosIfMock(chromeos_interface.ChromeOSInterface):
+    '''A wrapper to allow testing of ChromeOSInterface on a host.'''
+
+    def __init__(self):
+        self.cs_values = CROSSYSTEM_SAMPLE
+        super(CrosIfMock, self).__init__(True)
+        self.init()
+        self.test_write_command = ''
+        self.write_command_seen = False
+
+    def run_shell_command(self, cmd):
+        if not self.target_hosted():
+            if cmd.startswith('crossystem') and not '=' in cmd:
+                if ' ' in cmd:
+                    param = cmd.split()[1]
+                    return StdOut(self.cs_values[param])
+                else:
+                    return StdOut('\n'.join('%s=%s' % (x, y) for (
+                                x, y) in CROSSYSTEM_SAMPLE.iteritems()))
+
+            if cmd == 'rootdev -s':
+                return StdOut('/dev/sda3')
+
+        if cmd == self.test_write_command:
+            self.test_write_command = ''
+            self.write_command_seen = True
+            return StdOut('')
+
+        return super(CrosIfMock, self).run_shell_command(cmd)
+
+
+CHROS_IF = CrosIfMock()
 
 class TestShellCommands(unittest.TestCase):
 
@@ -35,8 +100,25 @@ class TestShellCommands(unittest.TestCase):
     def test_boot_state_vector(self):
         '''Verify the format (not the contents) of the boot vector.'''
         bv = CHROS_IF.boot_state_vector()
-        self.assertEqual(bv.count(':'), 4)
-        self.assertEqual(len(bv), 9)
+        self.assertEqual(bv, '1:1:1:0:3')
+        saved_mainfw_type = CROSSYSTEM_SAMPLE['mainfw_type']
+        del(CROSSYSTEM_SAMPLE['mainfw_type'])
+        self.assertRaises(KeyError, CHROS_IF.boot_state_vector)
+        CROSSYSTEM_SAMPLE['mainfw_type'] = saved_mainfw_type
+        CROSSYSTEM_SAMPLE['mainfw_act'] = 'X'
+        try:
+            CHROS_IF.boot_state_vector()
+        except chromeos_interface.ChromeOSInterfaceError, e:
+            dump = '\n'.join('%s=%s' % (x, y) for (
+                    x, y) in CROSSYSTEM_SAMPLE.iteritems())
+            self.assertEqual(e[0], dump)
+
+    def test_crossystem_set(self):
+        '''Test is appropriate crossystem command is invoked on assignments.'''
+        CHROS_IF.test_write_command = 'crossystem "xxx=zzz"'
+        CHROS_IF.write_command_seen = False
+        CHROS_IF.cs.xxx = 'zzz'
+        self.assertTrue(CHROS_IF.write_command_seen)
 
 
 if __name__ == '__main__':
