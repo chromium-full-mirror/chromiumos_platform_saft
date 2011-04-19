@@ -21,8 +21,116 @@ class ChromeOSInterfaceError(Exception):
 class Crossystem(object):
     '''A wrapper for the crossystem utility.'''
 
+    # Code dedicated for user triggering recovery mode through crossystem.
+    USER_RECOVERY_REQUEST_CODE = '193'
+
+    '''
+    The first three legacy boot vector digits are the boot vector base (the
+    entire vector consists of 5 digits). They used to be reported by the BIOS
+    through ACPI, but that scheme has been superseded by the 'crossystem'
+    interface.
+
+    The digits of the boot vector base have the following significance
+
+    - first digit -
+    1 - normal boot
+    2 - developer mode boot
+    3 - recovery initialed by pressing the recovery button
+    4 - recovery from developer mode warning screen
+    5 - recovery caused by both firmware images being invalid
+    6 - recovery caused by both kernel images being invalid
+    8 - recovery initiated by user
+
+    - second digit -
+    0 - recovery firmware
+    1 - rewritable firmware A
+    2 - rewritable firmware B
+
+    - third digit -
+    0 - Read only (recovery) EC firmware
+    1 - rewritable EC firmware
+
+
+    Below is a list of dictionaries to map current system state as reported by
+    'crossystem' into the 'legacy' boot vector digits.
+
+    The three elements of the list represent the three digits of the boot
+    vector. Each list element is a dictionary where the key is the legacy boot
+    vector value in the appropriate position, and the value is in turn a
+    dictionary of name-value pairs.
+
+    If all name-value pairs of a dictionary element match those reported by
+    crossystem, the legacy representation number is considered the appropriate
+    vector digit.
+
+    Note that on some platforms (namely, Mario) same parameters returned by
+    crossystem are set to a wrong value. The class init() routine adjust the
+    list to support those platforms.
+    '''
+
+    VECTOR_MAPS = [
+        { # first vector position
+            '1': {
+                'devsw_boot': '0',
+                'mainfw_type': 'normal',
+                'recoverysw_boot': '0',
+                },
+            '5': {
+                'devsw_boot': '0',
+                'recoverysw_boot': '0',
+                'recovery_reason' : '3',
+                'mainfw_type': 'recovery',
+                },
+            '6': {
+                'devsw_boot': '0',
+                'recoverysw_boot': '0',
+                'recovery_reason' : '66',
+                'mainfw_type': 'recovery',
+                },
+            '8': {
+                'devsw_boot': '0',
+                'recoverysw_boot': '0',
+                'recovery_reason' : USER_RECOVERY_REQUEST_CODE,
+                'mainfw_type': 'recovery',
+                },
+            },
+        { # second vector position
+            '0': {'mainfw_type': 'recovery',},
+            '1': {
+                'mainfw_type': 'normal',
+                'mainfw_act': 'A'
+                },
+            '2': {
+                'mainfw_type': 'normal',
+                'mainfw_act': 'B'
+                },
+            },
+        { # third vector position
+            '0': {'ecfw_act': 'RO',},
+            '1': {'ecfw_act': 'RW',},
+            },
+        ]
+
     def init(self, cros_if):
+        '''Init the instance. If running on Mario - adjust the map.'''
+
         self.cros_if = cros_if
+
+        # Hack Alert!!! Adjust vector map to work on Mario
+        fwid = self.__getattr__('fwid').lower()
+        if not 'mario' in fwid:
+            return
+        # Mario firmware is broken and always reports recovery switch as set
+        # at boot time when booting up in recovery mode. This is why we
+        # exclude recoverysw_boot from the map when running on mario.
+        for state in self.VECTOR_MAPS[0].itervalues():
+            if state['mainfw_type'] != 'recovery':
+                continue
+            if 'recoverysw_boot' in state:
+                del(state['recoverysw_boot'])
+            if state['recovery_reason'] == self.USER_RECOVERY_REQUEST_CODE:
+                # This is the only recovery reason Mario knows about
+                state['recovery_reason'] = '1'
 
     def __getattr__(self, name):
         '''
@@ -40,84 +148,27 @@ class Crossystem(object):
         else:
             self.cros_if.run_shell_command('crossystem "%s=%s"' % (name, value))
 
+    def request_recovery(self):
+        '''Request recovery mode next time the target reboots.'''
+
+        self.__setattr__('recovery_request', self.USER_RECOVERY_REQUEST_CODE)
 
     def get_boot_vector_base(self):
-        '''
-        Convert system state into a legacy boot vector base.
+        '''Convert system state into a legacy boot vector base.
 
-        The first three legacy boot vector digits are the boot vector base
-        (the entire vector consists of 5 digits). They used to be reported by
-        the BIOS through ACPI, but that scheme has been superseded by the
-        'crossystem' interface.
+        The function looks up the VECTOR_MAPS list above to find the digits
+        matching the current crossystem output, and returns a list of three
+        digits in symbolic representation, which become the base of the 5
+        digit boot state vector.
 
-        The digits of the boot vector base have the following significance
-
-        - first digit -
-        1 - normal boot
-        2 - developer mode boot
-        3 - recovery initialed by pressing the recovery button
-        4 - recovery from developer mode warning screen
-        5 - recovery caused by both firmware images being invalid
-        6 - recovery caused by both kernel images being invalid
-
-        - second digit -
-        0 - recovery firmware
-        1 - rewritable firmware A
-        2 - rewritable firmware B
-
-        - third digit -
-        0 - Read only (recovery) EC firmware
-        1 - rewritable EC firmware
-
-
-        This function uses a three tuple of dictionaries to map current system
-        state as reported by 'crossystem' into the 'legacy' boot vector
-        digits.
-
-        Each tuple element is a dictionary, where the key is the 'legacy'
-        representation of the state, and the value is a yet another dictionary
-        of name-value pairs.
-
-        If all name-value pairs match those in the crossystem output, the
-        legacy representation number is returned as the appropriate vector
-        number.
-
-        The function returns a list of three digits in symbolic representation.
-
-        Should it be impossible to interpret the state, the function returns a
-        partially built list, which is an indication of a problem for the
+        Should it be impossible to interpret the state, the function returns
+        a partially built list, which is an indication of a problem for the
         caller (list shorter than 3 elements).
         '''
 
-        vector_maps = (
-            { # first vector position
-                '1': {
-                    'devsw_boot': '0',
-                    'recoverysw_boot': '0',
-                    'recovery_reason' : '0',
-                    'tried_fwb' : '0',
-                    },
-                },
-            { # second vector position
-                '0': {'mainfw_type': 'recovery',},
-                '1': {
-                    'mainfw_type': 'normal',
-                    'mainfw_act': 'A'
-                    },
-                '2': {
-                    'mainfw_type': 'normal',
-                    'mainfw_act': 'B'
-                    },
-                },
-            { # third vector position
-                '0': {'ecfw_act': 'RO',},
-                '1': {'ecfw_act': 'RW',},
-                },
-        )
-
         boot_vector = []
 
-        for vector_map in vector_maps:
+        for vector_map in self.VECTOR_MAPS:
             for (digit, values) in vector_map.iteritems():
                 for (name, value) in values.iteritems():
                     if self.__getattr__(name) != value:
@@ -129,7 +180,8 @@ class Crossystem(object):
         return boot_vector
 
     def dump(self):
-        '''Dump all values as multiline text.'''
+        '''Dump all crossystem values as multiline text.'''
+
         return '\n'.join(self.cros_if.run_shell_command_get_output(
             'crossystem'))
 

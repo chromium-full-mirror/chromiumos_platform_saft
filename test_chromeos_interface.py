@@ -7,10 +7,21 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
 import chromeos_interface
+
+def zero_recoverysw_count(vector_map):
+    '''Calculate number of elements where recoverysw is zero in recovery mode'''
+    zero_count = 0
+    for key, values in vector_map.iteritems():
+        if values['mainfw_type'] != 'recovery':
+            continue
+        if 'recoverysw_boot' in values and values['recoverysw_boot'] == '0':
+            zero_count += 1
+    return zero_count
 
 # A set of crossystem output values pertinent to the tests.
 CROSSYSTEM_SAMPLE = {
@@ -55,15 +66,15 @@ class CrosIfMock(chromeos_interface.ChromeOSInterface):
         self.write_command_seen = False
 
     def run_shell_command(self, cmd):
-        if not self.target_hosted():
-            if cmd.startswith('crossystem') and not '=' in cmd:
-                if ' ' in cmd:
-                    param = cmd.split()[1]
-                    return StdOut(self.cs_values[param])
-                else:
-                    return StdOut('\n'.join('%s=%s' % (x, y) for (
-                                x, y) in CROSSYSTEM_SAMPLE.iteritems()))
+        if cmd.startswith('crossystem') and not '=' in cmd:
+            if ' ' in cmd:
+                param = cmd.split()[1]
+                return StdOut(self.cs_values[param])
+            else:
+                return StdOut('\n'.join('%s=%s' % (x, y) for (
+                            x, y) in CROSSYSTEM_SAMPLE.iteritems()))
 
+        if not self.target_hosted():
             if cmd == 'rootdev -s':
                 return StdOut('/dev/sda3')
 
@@ -114,12 +125,39 @@ class TestShellCommands(unittest.TestCase):
             self.assertEqual(e[0], dump)
 
     def test_crossystem_set(self):
-        '''Test is appropriate crossystem command is invoked on assignments.'''
+        '''Test if appropriate crossystem command is invoked on assignments.'''
         CHROS_IF.test_write_command = 'crossystem "xxx=zzz"'
         CHROS_IF.write_command_seen = False
         CHROS_IF.cs.xxx = 'zzz'
         self.assertTrue(CHROS_IF.write_command_seen)
 
+    def test_run_bad_shell_command(self):
+        '''Test if run_shell_command() raises exception on errors.'''
+
+        saved = sys.stdout
+        sys.stdout = open('/dev/null', 'w')
+        try:
+            CHROS_IF.run_shell_command('ls .')
+            CHROS_IF.run_shell_command('nonexisting_command')
+        except chromeos_interface.ChromeOSInterfaceError, e:
+            self.assertEqual(e[0], 'command nonexisting_command failed')
+        finally:
+            sys.stdout = saved
+
+    def test_mario_workwaround(self):
+        '''Test if the vector map is adjusted on Mario.'''
+
+        chros_if = CrosIfMock()
+        zero_values_count = zero_recoverysw_count(
+            chros_if.cs.VECTOR_MAPS[0])
+        self.assertNotEqual(zero_values_count, 0)
+
+        CROSSYSTEM_SAMPLE['fwid'] = CROSSYSTEM_SAMPLE['fwid'].replace(
+            'Alex', 'Mario')
+        chros_if = CrosIfMock()
+        zero_values_count = zero_recoverysw_count(
+            chros_if.cs.VECTOR_MAPS[0])
+        self.assertEqual(zero_values_count, 0)
 
 if __name__ == '__main__':
     unittest.main()

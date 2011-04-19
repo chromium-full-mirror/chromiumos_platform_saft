@@ -97,7 +97,7 @@ BASE_STORAGE_DEVICE = '/dev/sda'
 
 # The list of shell executables necessary for this program to work.
 REQUIRED_PROGRAMS = '''
-cgpt blkid flashrom reboot_mode readlink rootdev vbutil_firmware vbutil_kernel
+cgpt crossystem blkid flashrom readlink rootdev vbutil_firmware vbutil_kernel
 mosys
 '''
 
@@ -175,7 +175,7 @@ class FirmwareTest(object):
         '''
         old_fwid = open(
             self.chros_if.state_dir_file(compare_to_file), 'r').read()
-        now_fwid = open(self.chros_if.acpi_file('FWID'), 'r').read()
+        now_fwid = self.chros_if.cs.fwid
         return old_fwid == now_fwid
 
     def _get_step(self):
@@ -252,7 +252,7 @@ class FirmwareTest(object):
       device, configuring proper file names for logging, etc.
       '''
         line = self.chros_if.run_shell_command_get_output(
-            'df %s' % self.mydir)[-1]
+            'df %s' % self.mydir)[1]
 
         self.base_partition = line.split()[0]
         if self.base_partition == '/dev/root':
@@ -343,12 +343,13 @@ class FirmwareTest(object):
     def set_try_fw_b(self):
         '''Request running firmware B on the next restart.'''
         self.chros_if.log('Requesting restart with FW B')
-        self.chros_if.run_shell_command('reboot_mode --try_firmware_b=1')
+        self.chros_if.cs.fwb_tries = 1
 
     def request_recovery_boot(self):
         '''Request running in recovery mode on the restart.'''
         self.chros_if.log('Requesting restart in recovery mode')
-        self.chros_if.run_shell_command('reboot_mode --recovery=1')
+        self.chros_if.cs.request_recovery()
+
 
     @allow_multiple_section_input
     def restore_firmware(self, section):
@@ -529,8 +530,8 @@ class FirmwareTest(object):
             self.chros_if.state_dir_file(FW_BACKUP_FILE))
         self.new_fw_image(fw_image)
         self._handle_saft_script(True)
-        shutil.copyfile(self.chros_if.acpi_file('FWID'),
-                        self.chros_if.state_dir_file(FWID_BACKUP_FILE))
+        open(self.chros_if.state_dir_file(FWID_BACKUP_FILE), 'w'
+             ).write(self.chros_if.cs.fwid)
         shutil.copyfile(fw_image, self.chros_if.state_dir_file(FW_COPY_FILE))
 
         self._set_step(0)
@@ -552,8 +553,8 @@ class FirmwareTest(object):
         self.window = window.GraphThread()
 
         if this_step == 0:
-            shutil.copyfile(self.chros_if.acpi_file('FWID'),
-                            self.chros_if.state_dir_file(FWID_NEW_FILE))
+            open(self.chros_if.state_dir_file(FWID_NEW_FILE), 'w'
+                 ).write(self.chros_if.cs.fwid)
 
             if self._verify_fw_id(FWID_BACKUP_FILE):
           # we expected FWID to change, but it did not - have the firmware
@@ -641,14 +642,13 @@ class FirmwareTest(object):
 # Firmware self test instance controlling this module.
 FST = FirmwareTest()
 
-# This is a tuple of tuples controlling the SAFT state machine. The states
-# are expected to be passed strictly in order. The states are identified
-# by the contents of BINF.[012] files in the sys fs ACPI directory. The
-# BINF files store information about the reason for reboot, what
-# firmware/kernel partitions were used, etc.
+# This is a tuple of tuples controlling the SAFT state machine. The states are
+# expected to be passed strictly in order. The states used to be identified by
+# the contents of BINF.[012] files in the sys fs ACPI directory. Now they are
+# derived from the crossystem output to match previously reported states.
 #
 # The first element of each component tuple is the expected state of the
-# machine (a ':' concatenation of the BINF files' contents).
+# machine.
 #
 # The second element of the component tuples is the action to take to
 # advance the test. The action is a function to call. The last line has
@@ -775,7 +775,8 @@ def main(argv):
                   # reason), gtk window already closed.
         except:
             # Whatever error that might be, gtk window must be shut.
-            FST.window.stop()
+            if FST.window:
+                FST.window.stop()
 
             # Make sure exception information is saved in the log.
             exc_type, exc_info, exc_trace = sys.exc_info()
