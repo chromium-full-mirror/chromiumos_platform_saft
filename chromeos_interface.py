@@ -227,7 +227,7 @@ class ChromeOSInterface(object):
 
     def target_hosted(self):
         '''Return True if running on a ChromeOS target.'''
-        signature = open('/proc/version_signature', 'r').read()
+        signature = open('/etc/lsb-release', 'r').readlines()[0]
         return re.search(r'chrom(ium|e)os', signature, re.IGNORECASE) != None
 
     def state_dir_file(self, file_name):

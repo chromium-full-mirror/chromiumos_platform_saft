@@ -32,14 +32,9 @@ enable_rw_mount() {
 }
 
 target_hosted () {
-    local vers_sig='/proc/version_signature'
-    if [ -f "${vers_sig}" ]; then
-        if egrep -iq 'chrom.*os' "${vers_sig}"; then
-            echo '1'
-            return
-        fi
-    fi
-    echo '0'
+  python -c 'import chromeos_interface;\
+crosif = chromeos_interface.ChromeOSInterface(True);\
+print "%d" % crosif.target_hosted()'
 }
 
 on_removable_device() {
