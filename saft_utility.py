@@ -546,6 +546,7 @@ class FirmwareTest(object):
       '''
 
         this_step = self._get_step()
+        self.chros_if.log('\nStarting step %d' % this_step)
 
         # Import when needed, because otherwise running test generates a
         # warning exception about the unavailable display.
@@ -574,8 +575,7 @@ class FirmwareTest(object):
         self.window.display_text(step_display % step_tuple)
 
         boot_vector = self.chros_if.boot_state_vector()
-        self.chros_if.log('\nRebooted into state %s on step %d' % (
-                boot_vector, this_step))
+        self.chros_if.log('Rebooted into state %s' % boot_vector)
 
         conf_log_file = RetriveSaftConfDefinion(CONF_LOG_VAR_NAME)
 

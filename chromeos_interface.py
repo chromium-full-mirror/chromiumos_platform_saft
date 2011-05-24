@@ -78,7 +78,7 @@ class Crossystem(object):
             '5': {
                 'devsw_boot': '0',
                 'recoverysw_boot': '0',
-                'recovery_reason' : '3',
+                'recovery_reason' : ('3', '23', '27'),
                 'mainfw_type': 'recovery',
                 },
             '6': {
@@ -171,8 +171,15 @@ class Crossystem(object):
         for vector_map in self.VECTOR_MAPS:
             for (digit, values) in vector_map.iteritems():
                 for (name, value) in values.iteritems():
-                    if self.__getattr__(name) != value:
-                        break
+                    # Get the actual attribute value from crossystem.
+                    attr_value = self.__getattr__(name)
+                    if isinstance(value, str):
+                        if attr_value != value:
+                            break
+                    else:
+                        # 'value' is a tuple of possible actual values.
+                        if attr_value not in value:
+                            break
                 else:
                     boot_vector.append(digit)
                     break
