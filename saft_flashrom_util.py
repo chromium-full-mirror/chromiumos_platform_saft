@@ -117,9 +117,9 @@ class LayoutScraper(object):
 
         # Generate a list of section range tuples.
         ost = sorted([layout[section] for section in layout])
-        base = 0
+        base = -1
         for section_base, section_end in ost:
-            if section_base < base or section_end < section_base:
+            if section_base <= base or section_end + 1 < section_base:
                 raise TestError('bad section at 0x%x..0x%x' % (
                         section_base, section_end))
             base = section_end
