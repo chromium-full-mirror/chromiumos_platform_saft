@@ -332,7 +332,7 @@ class ChromeOSInterface(object):
         '''Check if a certain storage device is removable.
 
         device - a string, file name of a storage device or a device partition
-                 (as in /dev/sda[0-9]).
+                 (as in /dev/sda[0-9] or /dev/mmcblk0p[0-9]).
 
         Returns True if the device is removable, False if not.
         '''
@@ -341,7 +341,7 @@ class ChromeOSInterface(object):
             return False
 
         # Drop trailing digit(s) and letter(s) (if any)
-        dev_name_stripper = re.compile('[0-9].*$')
+        dev_name_stripper = re.compile('p?[0-9]+$')
 
         base_dev = dev_name_stripper.sub('', device.split('/')[2])
         removable = int(open('/sys/block/%s/removable' % base_dev, 'r'

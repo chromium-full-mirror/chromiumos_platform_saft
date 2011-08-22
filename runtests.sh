@@ -13,7 +13,7 @@ rm -rf /tmp/tmp*/var/.fw_test 2> /dev/null
 umount -d /tmp/tmp* 2> /dev/null
 
 TMPD_PATTERN='/tmp/tmp_saft.XXXX'
-DEFAULT_FLASH_DEVICE="${FLASH_DEVICE:=sdb}"
+
 set -e
 this_prog=$(readlink -f $0)
 if [ -n "$1" ]; then
@@ -21,6 +21,34 @@ if [ -n "$1" ]; then
 else
     new_firmware=''
 fi
+
+case "$(crossystem arch)" in
+  (x86)
+    ARCH='x86'
+    DEFAULT_FLASH_DEVICE="${FLASH_DEVICE:=sdb}"
+    DEFAULT_DISK_DEVICE="${DISK_DEVICE:=sda}"
+    ;;
+  (arm)
+    ARCH='arm'
+    DEFAULT_FLASH_DEVICE="${FLASH_DEVICE:=sda}"
+    DEFAULT_DISK_DEVICE="${DISK_DEVICE:=mmcblk0}"
+    ;;
+  (*)
+    echo "Failed to auto detect architecture."
+    exit 1
+    ;;
+esac
+
+join_part() {
+  local dev="$1"
+  local part="$2"
+  # Test the dev is mmcblk0 or sda style
+  if [ "${dev}" != "${dev/mmcblk/}" ]; then
+    echo "$1p$2"
+  else
+    echo "$1$2"
+  fi
+}
 
 # This hack has been borrowed from src/scripts/common.sh
 enable_rw_mount() {
@@ -44,7 +72,7 @@ on_removable_device() {
     if [ "${rootd}" == '/dev/root' ]; then
         rootd=$(rootdev -s)
     fi
-    blockd=$(echo "${rootd}"  | sed 's|.*/\([^/0-9]\+\)[0-9]\+|\1|')
+    blockd=$(echo "${rootd}" | sed 's/.*\(sd[a-z]\+\|mmcblk[0-9]\+\).*/\1/')
     removable="/sys/block/"${blockd}"/removable"
     if [ -f "${removable}" ]; then
         cat "${removable}"
@@ -56,7 +84,8 @@ on_removable_device() {
 move_to_removable_device() {
     # Move ourselves to the removable device and run off it.
 
-    # For simplicity, hardcode the removable device to be /dev/sdb
+    # For simplicity, hardcode the removable device to be
+    # $DEFAULT_FLASH_DEVICE which was assigned at the beginning.
     flash_device="${DEFAULT_FLASH_DEVICE}"
     fname="/sys/block/${flash_device}/removable"
 
@@ -73,7 +102,7 @@ move_to_removable_device() {
         echo "/dev/${flash_device} does not contain a valid file system"
         exit 1
     fi
-    flash_root_partition="/dev/${flash_device}${dev_num}"
+    flash_root_partition=$(join_part "/dev/${flash_device}" "${dev_num}")
 
     enable_rw_mount "${flash_root_partition}"
 
@@ -104,8 +133,8 @@ move_to_removable_device() {
 
 configure_gpt_settings() {
     # Let's keep it simple for now, partition 2 is the one to boot.
-    cgpt add -i 2 -T 5 -P 9 -S 1 /dev/sda
-    cgpt add -i 4 -T 5 -P 5 -S 1 /dev/sda
+    cgpt add -i 2 -T 5 -P 9 -S 1 "/dev/${DEFAULT_DISK_DEVICE}"
+    cgpt add -i 4 -T 5 -P 5 -S 1 "/dev/${DEFAULT_DISK_DEVICE}"
 }
 
 run_tests() {
@@ -146,7 +175,7 @@ check_and_set_saft_environment() {
     fi
 
     # Is flash device kernel configured to run with verified root fs?
-    flash_kernel_dev="/dev/${DEFAULT_FLASH_DEVICE}2"
+    flash_kernel_dev=$(join_part "/dev/${DEFAULT_FLASH_DEVICE}" '2')
     dd if="${flash_kernel_dev}" of="${other_kern_file}"
     cmd_line=$(vbutil_kernel --verify "${other_kern_file}" --verbose | tail -1)
 
