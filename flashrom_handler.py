@@ -25,6 +25,7 @@ class FvSection(object):
         self._sig_name = sig_name
         self._body_name = body_name
         self._version = -1  # Is not set on construction.
+        self._flags = 0  # Is not set on construction.
 
     def names(self):
         return (self._sig_name, self._body_name)
@@ -38,8 +39,14 @@ class FvSection(object):
     def get_version(self):
         return self._version
 
+    def get_flags(self):
+        return self._flags
+
     def set_version(self, version):
         self._version = version
+
+    def set_flags(self, flags):
+        self._flags = flags
 
 class FlashromHandlerError(Exception):
     pass
@@ -115,6 +122,7 @@ class FlashromHandler(object):
                 self.image, section.get_sig_name())
 
             section.set_version(self.chros_if.retrieve_body_version(vb_section))
+            section.set_flags(self.chros_if.retrieve_preamble_flags(vb_section))
 
         if not self.pub_key_file:
             self._retrieve_pub_key()
@@ -277,7 +285,12 @@ class FlashromHandler(object):
         '''Retrieve version number of a firmware section'''
         return self.fv_sections[section].get_version()
 
-    def set_section_version(self, section, version, write_through=False):
+    def get_section_flags(self, section):
+        '''Retrieve preamble flags of a firmware section'''
+        return self.fv_sections[section].get_flags()
+
+    def set_section_version(self, section, version, flags,
+                            write_through=False):
         '''Re-sign the firmware section using the supplied version number.'''
         if self.get_section_version(section) == version:
             return  # No version change, nothing to do.
@@ -299,6 +312,7 @@ class FlashromHandler(object):
                 self.dev_key_path, self.KERNEL_SUBKEY_FILE_NAME))
         args.append('--signprivate %s' % os.path.join(
                 self.dev_key_path, self.FW_PRIV_DATA_KEY_FILE_NAME))
+        args.append('--flags %d' % flags)
         cmd = 'vbutil_firmware %s' % ' '.join(args)
         self.chros_if.run_shell_command(cmd)
 

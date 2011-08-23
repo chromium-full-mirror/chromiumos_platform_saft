@@ -432,6 +432,27 @@ class ChromeOSInterface(object):
         _, version = struct.unpack_from(preamble_format, blob, kb_size)
         return version
 
+    def retrieve_preamble_flags(self, blob):
+        '''Given a blob, retrieve preamble flags if available.
+
+        It only works for firmware. If the version of preamble header is less
+        than 2.1, no preamble flags supported, just returns 0.
+        '''
+        header_format = '<8s8sQ'
+        preamble_format = '<32sII64sI'
+        magic, _, kb_size = struct.unpack_from(header_format, blob)
+
+        if magic != 'CHROMEOS':
+            return -1  # This could be a corrupted version case.
+
+        _, ver, subver, _, flags = struct.unpack_from(preamble_format, blob,
+                                                      kb_size)
+
+        if ver > 2 or (ver == 2 and subver >= 1):
+            return flags
+        else:
+            return 0  # Returns 0 if preamble flags not available.
+
     def read_partition(self, partition, size):
         '''Read the requested partition, up to size bytes.'''
         tmp_file = self.state_dir_file('part.tmp')

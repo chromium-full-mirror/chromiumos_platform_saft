@@ -46,6 +46,8 @@ usage: %s <key_file> [<fd_image_file>]
 
 class TestFlashromHandler(unittest.TestCase):
 
+    PREAMBLE_USE_RO_NORMAL = 1
+
     def setUp(self):
         self.fh = flashrom_handler.FlashromHandler()
         self.chros_if = chromeos_interface.ChromeOSInterface(True)
@@ -92,7 +94,8 @@ class TestFlashromHandler(unittest.TestCase):
             self.fh.new_image(backup)
             self.fh.verify_image()
             new_version = self.fh.get_section_version(section) + 1
-            self.fh.set_section_version(section, new_version)
+            flags = self.fh.get_section_flags(section)
+            self.fh.set_section_version(section, new_version, flags)
             self.fh.dump_whole(backup)
             self.fh.new_image(backup)
             self.fh.verify_image()
@@ -111,8 +114,12 @@ class TestFlashromHandler(unittest.TestCase):
             corrupted_subsection = self.fh.corrupt_section(section)
             self.fh.dump_whole(corrupted_file_name)
             self.fh.new_image(corrupted_file_name)
-            self.assertRaises(chromeos_interface.ChromeOSInterfaceError,
-                              self.fh.verify_image)
+            flags = self.fh.get_section_flags(section)
+            if flags & self.PREAMBLE_USE_RO_NORMAL:
+                self.fh.verify_image  # No assertion when USE_RO_NORMAL
+            else:
+                self.assertRaises(chromeos_interface.ChromeOSInterfaceError,
+                                  self.fh.verify_image)
             self.fh.restore_section(section)
             self.fh.dump_whole(corrupted_file_name)
             self.fh.new_image(corrupted_file_name)

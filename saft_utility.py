@@ -419,10 +419,12 @@ class FirmwareTest(object):
     def move_firmware_backward(self, section):
         '''Decrement firmware version for the requested section.'''
         new_version = FLASHROM_HANDLER.get_section_version(section) - 1
+        flags = FLASHROM_HANDLER.get_section_flags(section)
         self.chros_if.log(
             'setting firmware section %s version to %d' % (
                 section, new_version))
-        FLASHROM_HANDLER.set_section_version(section, new_version, True)
+        FLASHROM_HANDLER.set_section_version(section, new_version, flags,
+                                             write_through=True)
 
     def jump_kernels_forward(self):
         '''Add two to both kernels' versions.
@@ -446,10 +448,12 @@ class FirmwareTest(object):
         '''
         for section in ('a', 'b'):
             new_version = FLASHROM_HANDLER.get_section_version(section) + 2
+            flags = FLASHROM_HANDLER.get_section_flags(section)
             self.chros_if.log(
                 'setting firmware section %s version to %d' % (
                     section, new_version))
-            FLASHROM_HANDLER.set_section_version(section, new_version, True)
+            FLASHROM_HANDLER.set_section_version(section, new_version, flags,
+                                                 write_through=True)
 
     def terminate_tpm_tests(self):
         '''Restore TPM and kernel states.
@@ -470,10 +474,12 @@ class FirmwareTest(object):
             new_tpm_kern_version = min(new_version, new_tpm_kern_version)
 
             new_version = FLASHROM_HANDLER.get_section_version(section)  - 1
+            flags = FLASHROM_HANDLER.get_section_flags(section)
             self.chros_if.log(
                 'setting firmware section %s version to %d' % (
                     section, new_version))
-            FLASHROM_HANDLER.set_section_version(section, new_version, True)
+            FLASHROM_HANDLER.set_section_version(section, new_version, flags,
+                                                 write_throught=True)
             new_tpm_fw_version = min(new_version, new_tpm_fw_version)
 
         self.tpm_handler.set_kernel_version(new_tpm_kern_version)
