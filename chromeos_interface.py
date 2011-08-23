@@ -341,17 +341,30 @@ class ChromeOSInterface(object):
             return False
 
         # Drop trailing digit(s) and letter(s) (if any)
-        dev_name_stripper = re.compile('p?[0-9]+$')
-
-        base_dev = dev_name_stripper.sub('', device.split('/')[2])
-        removable = int(open('/sys/block/%s/removable' % base_dev, 'r'
-                             ).read())
+        base_dev = self.strip_part(device.split('/')[2])
+        removable = int(open('/sys/block/%s/removable' % base_dev, 'r').read())
 
         return removable == 1
 
-    def get_root_dev(self):
-        '''Return a string, the name of the root device'''
+    def get_root_part(self):
+        '''Return a string, the name of root device with partition number'''
         return self.run_shell_command_get_output('rootdev -s')[0]
+
+    def get_root_dev(self):
+        '''Return a string, the name of root device without partition number'''
+        return self.strip_part(self.get_root_part())
+
+    def join_part(self, dev, part):
+        '''Return a concatenated string of device and partition number'''
+        if 'mmcblk' in dev:
+            return dev + 'p' + part
+        else:
+            return dev + part
+
+    def strip_part(self, dev_with_part):
+        '''Return a stripped string without partition number'''
+        dev_name_stripper = re.compile('p?[0-9]+$')
+        return dev_name_stripper.sub('', dev_with_part)
 
     def run_shell_command_get_output(self, cmd):
         '''Run shell command and return its console output to the caller.
@@ -381,9 +394,9 @@ class ChromeOSInterface(object):
         if len(state) != 3:
             raise ChromeOSInterfaceError(self.cs.dump())
 
-        root_dev = self.get_root_dev()
-        state.append('%d' % int(self.is_removable_device(root_dev)))
-        state.append('%s' % root_dev[-1])
+        root_part = self.get_root_part()
+        state.append('%d' % int(self.is_removable_device(root_part)))
+        state.append('%s' % root_part[-1])
         state_str = ':'.join(state)
         return state_str
 
@@ -399,8 +412,8 @@ class ChromeOSInterface(object):
       # The device root file system is mounted on is represented as /dev/root
       # otherwise.
         options_filter = re.compile('.*\((.+)\).*')
-        root_dev = self.get_root_dev()
-        if dev == root_dev:
+        root_part = self.get_root_part()
+        if dev == root_part:
             dev = '/dev/root'
 
         for line in self.run_shell_command_get_output('mount'):

@@ -24,7 +24,6 @@ PUBKEY_HEADER_FORMAT = '<QQQQ'
 PUBKEY_FILE = 'kernel.vbpubk'
 KERNEL_FILE = 'kernel'
 BACKUP_FILE = 'kernel.backup'
-MAIN_ROOT_DEV = '/dev/sda'
 SECTIONS = ('A', 'B')
 BACKUP_CMD = 'dd if=%s of=%s bs=1000000 count=1'
 
@@ -66,6 +65,7 @@ class TestKernelHandler(unittest.TestCase):
         '''
         self.chros_if = chromeos_interface.ChromeOSInterface(True)
         self.chros_if.init()
+        self.root_dev = self.chros_if.get_root_dev()
         self.tmpd = self.chros_if.init_environment()
         self.kernel_handler = kernel_handler.KernelHandler()
         self.kernel_handler.init(self.chros_if)
@@ -87,15 +87,16 @@ class TestKernelHandler(unittest.TestCase):
         section - a single character string, A or B, designating the kernel in
                   question.
 
-        'cgpt show MAIN_ROOT_DEV` output is scanned for the kernel partition
+        'cgpt show root_dev` output is scanned for the kernel partition
         names, then the device number is retrieved from the same line.
         '''
 
         pattern = 'Label: "KERN-' + section
         for line in self.chros_if.run_shell_command_get_output(
-            'cgpt show %s' % MAIN_ROOT_DEV):
+            'cgpt show %s' % self.root_dev):
             if pattern in line:
-                self.device = MAIN_ROOT_DEV + line.split()[2]
+                self.device = self.chros_if.join_part(self.root_dev,
+                                                      line.split()[2])
                 return
         self.assertTrue(False)  # Failed to get the kernel.
 

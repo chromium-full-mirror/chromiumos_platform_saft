@@ -93,8 +93,6 @@ FW_COPY_FILE = 'flashrom.new'  # A copy of the flashrom contents being tested.
 FWID_BACKUP_FILE = 'fwid.bak'  # FWID reported by the original firmware.
 FWID_NEW_FILE = 'fwid.new'  # FWID reported by the firmware being tested.
 
-BASE_STORAGE_DEVICE = '/dev/sda'
-
 # The list of shell executables necessary for this program to work.
 REQUIRED_PROGRAMS = '''
 cgpt crossystem blkid flashrom readlink rootdev vbutil_firmware vbutil_kernel
@@ -104,6 +102,7 @@ mosys
 
 FLASHROM_HANDLER = flashrom_handler.FlashromHandler()
 CHROS_IF = chromeos_interface.ChromeOSInterface(__name__ != '__main__')
+BASE_STORAGE_DEVICE = CHROS_IF.get_root_dev()
 cgpt_st = cgpt_state.CgptState('COMPLETE', CHROS_IF, BASE_STORAGE_DEVICE)
 
 def allow_multiple_section_input(image_operator):
@@ -167,6 +166,7 @@ class FirmwareTest(object):
         self.step_failed = False
         self.window = None
         self.tpm_handler = None
+        self.root_dev = None
 
     def _verify_fw_id(self, compare_to_file):
         '''Verify if the current firmware ID matches the contents a file.
@@ -256,7 +256,7 @@ class FirmwareTest(object):
 
         self.base_partition = line.split()[0]
         if self.base_partition == '/dev/root':
-            self.base_partition = self.chros_if.get_root_dev()
+            self.base_partition = self.chros_if.get_root_part()
 
         if not self.chros_if.is_removable_device(self.base_partition):
             raise FwError(

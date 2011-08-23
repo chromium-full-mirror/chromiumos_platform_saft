@@ -8,9 +8,8 @@
 import re
 
 TMP_FILE_NAME = 'kernel_header_dump'
-MAIN_STORAGE_DEVICE = '/dev/sda'
 
-    # Types of kernel modifications.
+# Types of kernel modifications.
 KERNEL_BODY_MOD = 1
 KERNEL_VERSION_MOD = 2
 
@@ -35,6 +34,7 @@ class KernelHandler(object):
         self.chros_if = None
         self.dump_file_name = None
         self.partition_map = {}
+        self.root_dev = None
 
     def _get_version(self, device):
         '''Get version of the kernel hosted on the passed in partition.'''
@@ -46,7 +46,7 @@ class KernelHandler(object):
         '''Scan `cgpt show <device> output to find kernel devices.'''
         kernel_partitions = re.compile('KERN-([AB])')
         disk_map = self.chros_if.run_shell_command_get_output(
-            'cgpt show %s' % MAIN_STORAGE_DEVICE)
+            'cgpt show %s' % self.root_dev)
 
         for line in disk_map:
             matched_line = kernel_partitions.search(line)
@@ -54,7 +54,7 @@ class KernelHandler(object):
                 continue
             label = matched_line.group(1)
             part_info = {}
-            device = MAIN_STORAGE_DEVICE + line.split()[2]
+            device = self.chros_if.join_part(self.root_dev, line.split()[2])
             part_info['device'] = device
             part_info['version'] = self._get_version(device)
             self.partition_map[label] = part_info
@@ -115,11 +115,12 @@ class KernelHandler(object):
             raise KernelHandlerError('Bad version value %d' % version)
         self._modify_kernel(section.upper(), version, KERNEL_VERSION_MOD)
 
-    def init (self, chros_if):
+    def init(self, chros_if):
         '''Initialize the kernel handler object.
 
         Input argument is a ChromeOS interface object reference.
         '''
         self.chros_if = chros_if
+        self.root_dev = chros_if.get_root_dev()
         self.dump_file_name = chros_if.state_dir_file(TMP_FILE_NAME)
         self._get_partition_map()
