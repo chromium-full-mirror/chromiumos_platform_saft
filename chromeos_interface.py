@@ -75,35 +75,46 @@ class Crossystem(object):
                 'mainfw_type': 'normal',
                 'recoverysw_boot': '0',
                 },
+            '2': {
+                'devsw_boot': '1',
+                'mainfw_type': 'developer',
+                'recoverysw_boot': '0',
+                },
+            '3': {
+                'devsw_boot': '0',
+                'mainfw_type': 'recovery',
+                'recovery_reason' : '2',
+                'recoverysw_boot': '1',
+                },
+            '4': {
+                'devsw_boot': '1',
+                'mainfw_type': 'recovery',
+                'recovery_reason' : '65',
+                'recoverysw_boot': '0',
+                },
             '5': {
                 'devsw_boot': '0',
-                'recoverysw_boot': '0',
-                'recovery_reason' : ('3', '23', '27'),
                 'mainfw_type': 'recovery',
+                'recovery_reason' : ('3', '23', '27'),
+                'recoverysw_boot': '0',
                 },
             '6': {
                 'devsw_boot': '0',
-                'recoverysw_boot': '0',
-                'recovery_reason' : '66',
                 'mainfw_type': 'recovery',
+                'recovery_reason' : '66',
+                'recoverysw_boot': '0',
                 },
             '8': {
                 'devsw_boot': '0',
-                'recoverysw_boot': '0',
-                'recovery_reason' : USER_RECOVERY_REQUEST_CODE,
                 'mainfw_type': 'recovery',
+                'recovery_reason' : USER_RECOVERY_REQUEST_CODE,
+                'recoverysw_boot': '0',
                 },
             },
         { # second vector position
             '0': {'mainfw_type': 'recovery',},
-            '1': {
-                'mainfw_type': 'normal',
-                'mainfw_act': 'A'
-                },
-            '2': {
-                'mainfw_type': 'normal',
-                'mainfw_act': 'B'
-                },
+            '1': {'mainfw_act': 'A',},
+            '2': {'mainfw_act': 'B',},
             },
         { # third vector position
             '0': {'ecfw_act': 'RO',},
