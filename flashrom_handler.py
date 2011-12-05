@@ -187,8 +187,8 @@ class FlashromHandler(object):
     def _modify_section(self, section, delta):
         '''Modify a firmware section inside the image.
 
-        The passed in delta is added to the value located at 5% offset into
-        the section body.
+        The passed in delta is added to the value located at 2% offset into
+        the section signature.
 
         Calling this function again for the same section the complimentary
         delta value would restore the section contents.
@@ -202,15 +202,16 @@ class FlashromHandler(object):
                                        % section)
 
         # Get the appropriate section of the image.
-        subsection_name = self.fv_sections[section].get_body_name()
-        body = self.fum.get_section(self.image, subsection_name)
+        subsection_name = self.fv_sections[section].get_sig_name()
+        sig = self.fum.get_section(self.image, subsection_name)
 
-        # Modify the byte in it within 5% of the section body.
-        index = len(body) / 20
-        body_list = list(body)
-        body_list[index] = '%c' % ((ord(body[index]) + delta) % 0x100)
+        # Modify the byte in it within 2% of the section signature.
+        sig_index = len(sig) / 50
+        sig_list = list(sig)
+        sig_list[sig_index] = '%c' % ((ord(sig[sig_index]) + delta) % 0x100)
         self.image = self.fum.put_section(self.image,
-                                          subsection_name, ''.join(body_list))
+                                          subsection_name, ''.join(sig_list))
+
         return subsection_name
 
     def corrupt_section(self, section):
