@@ -353,13 +353,13 @@ class FirmwareTest(object):
 
     @allow_multiple_section_input
     def restore_firmware(self, section):
-        '''Restore the requested firmware section (previously corrupted).'''
+        '''Restore the previously corrupted firmware section signature.'''
         self.chros_if.log('Restoring firmware %s' % section)
         FLASHROM_HANDLER.restore_firmware(section)
 
     @allow_multiple_section_input
     def corrupt_firmware(self, section):
-        '''Corrupt the requested firmware section.'''
+        '''Corrupt the requested firmware section signature.'''
         self.chros_if.log('Corrupting firmware %s' % section)
         FLASHROM_HANDLER.corrupt_firmware(section)
 

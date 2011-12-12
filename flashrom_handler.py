@@ -184,11 +184,11 @@ class FlashromHandler(object):
                 self.chros_if.state_dir_file(section.get_body_name()))
             self.chros_if.run_shell_command(cmd)
 
-    def _modify_section(self, section, delta):
-        '''Modify a firmware section inside the image.
+    def _modify_section(self, section, delta, body_or_sig=False):
+        '''Modify a firmware section inside the image, either body or signature.
 
         The passed in delta is added to the value located at 2% offset into
-        the section signature.
+        the section blob, either body or signature.
 
         Calling this function again for the same section the complimentary
         delta value would restore the section contents.
@@ -202,38 +202,64 @@ class FlashromHandler(object):
                                        % section)
 
         # Get the appropriate section of the image.
-        subsection_name = self.fv_sections[section].get_sig_name()
-        sig = self.fum.get_section(self.image, subsection_name)
+        if body_or_sig:
+            subsection_name = self.fv_sections[section].get_body_name()
+        else:
+            subsection_name = self.fv_sections[section].get_sig_name()
+        blob = self.fum.get_section(self.image, subsection_name)
 
-        # Modify the byte in it within 2% of the section signature.
-        sig_index = len(sig) / 50
-        sig_list = list(sig)
-        sig_list[sig_index] = '%c' % ((ord(sig[sig_index]) + delta) % 0x100)
+        # Modify the byte in it within 2% of the section blob.
+        modified_index = len(blob) / 50
+        blob_list = list(blob)
+        blob_list[modified_index] = ('%c' %
+                ((ord(blob[modified_index]) + delta) % 0x100))
         self.image = self.fum.put_section(self.image,
-                                          subsection_name, ''.join(sig_list))
+                                          subsection_name, ''.join(blob_list))
 
         return subsection_name
 
     def corrupt_section(self, section):
-        '''Corrupt a section of the image'''
+        '''Corrupt a section signature of the image'''
 
-        return self._modify_section(section, self.DELTA)
+        return self._modify_section(section, self.DELTA, body_or_sig=False)
+
+    def corrupt_section_body(self, section):
+        '''Corrupt a section body of the image'''
+
+        return self._modify_section(section, self.DELTA, body_or_sig=True)
 
     def restore_section(self, section):
-        '''Restore a previously corrupted section of the image.'''
+        '''Restore a previously corrupted section signature of the image.'''
 
-        return self._modify_section(section, -self.DELTA)
+        return self._modify_section(section, -self.DELTA, body_or_sig=False)
+
+    def restore_section_body(self, section):
+        '''Restore a previously corrupted section body of the image.'''
+
+        return self._modify_section(section, -self.DELTA, body_or_sig=True)
 
     def corrupt_firmware(self, section):
-        '''Corrupt a section in the FLASHROM!!!'''
+        '''Corrupt a section signature in the FLASHROM!!!'''
 
         subsection_name = self.corrupt_section(section)
         self.fum.write_partial(self.image, (subsection_name, ))
 
+    def corrupt_firmware_body(self, section):
+        '''Corrupt a section body in the FLASHROM!!!'''
+
+        subsection_name = self.corrupt_section_body(section)
+        self.fum.write_partial(self.image, (subsection_name, ))
+
     def restore_firmware(self, section):
-        '''Restore the previously corrupted section in the FLASHROM!!!'''
+        '''Restore the previously corrupted section sig in the FLASHROM!!!'''
 
         subsection_name = self.restore_section(section)
+        self.fum.write_partial(self.image, (subsection_name, ))
+
+    def restore_firmware_body(self, section):
+        '''Restore the previously corrupted section body in the FLASHROM!!!'''
+
+        subsection_name = self.restore_section_body(section)
         self.fum.write_partial(self.image, (subsection_name, ))
 
     def firmware_sections_equal(self):
