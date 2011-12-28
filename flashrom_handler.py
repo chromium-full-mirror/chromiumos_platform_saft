@@ -308,6 +308,16 @@ class FlashromHandler(object):
                 'Attempt at using an uninitialized object')
         open(filename, 'w').write(self.image)
 
+    def get_gbb_flags(self):
+        '''Retrieve the GBB flags'''
+        gbb_header_format = '<12sL'
+        gbb_section = self.fum.get_section(self.image, 'FV_GBB')
+        try:
+            _, gbb_flags = struct.unpack_from(gbb_header_format, gbb_section)
+        except struct.error, e:
+            raise FlashromHandlerError(e)
+        return gbb_flags
+
     def get_section_version(self, section):
         '''Retrieve version number of a firmware section'''
         return self.fv_sections[section].get_version()
