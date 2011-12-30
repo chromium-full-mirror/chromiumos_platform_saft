@@ -241,7 +241,10 @@ class ChromeOSInterface(object):
                 except OSError, err:
                     raise ChromeOSInterfaceError(err)
             if log_file:
-                self.log_file = os.path.join(state_dir, log_file)
+                if log_file[0] == '/':
+                    self.log_file = log_file
+                else:
+                    self.log_file = os.path.join(state_dir, log_file)
 
     def target_hosted(self):
         '''Return True if running on a ChromeOS target.'''
