@@ -5,6 +5,7 @@
 
 '''A module containing kernel handler class used by SAFT.'''
 
+import os
 import re
 
 TMP_FILE_NAME = 'kernel_header_dump'
@@ -92,7 +93,8 @@ class KernelHandler(object):
                 'vbutil_kernel --repack %s --version %d '
                 '--signprivate %s --oldblob %s' % (
                     kernel_to_write, new_version,
-                    'kernel_data_key.vbprivk', self.dump_file_name))
+                    os.path.join(self.dev_key_path, 'kernel_data_key.vbprivk'),
+                    self.dump_file_name))
         else:
             return  # Unsupported mode, ignore.
         self.chros_if.run_shell_command(cmd_template % (kernel_to_write, dev))
@@ -115,12 +117,13 @@ class KernelHandler(object):
             raise KernelHandlerError('Bad version value %d' % version)
         self._modify_kernel(section.upper(), version, KERNEL_VERSION_MOD)
 
-    def init(self, chros_if):
+    def init(self, chros_if, dev_key_path='.'):
         '''Initialize the kernel handler object.
 
         Input argument is a ChromeOS interface object reference.
         '''
         self.chros_if = chros_if
+        self.dev_key_path = dev_key_path
         self.root_dev = chros_if.get_root_dev()
         self.dump_file_name = chros_if.state_dir_file(TMP_FILE_NAME)
         self._get_partition_map()
