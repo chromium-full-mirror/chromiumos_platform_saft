@@ -183,7 +183,7 @@ class flashrom_util(object):
         gets created automatically (read from the flashrom image using
         'mosys'). If the user wants this object to operate on some other file,
         he could either have the map for the file created explicitly by
-        invoking flashrom.set_bios_layout(filename), or supply his own map
+        invoking flashrom.set_firmware_layout(filename), or supply his own map
         (which is a dictionary where keys are section names, and values are
         tuples of integers, base address of the section and the last address
         of the section).
@@ -210,20 +210,28 @@ class flashrom_util(object):
         keep_temp_files: boolean flag to control cleaning of temporary files
     """
 
-    def __init__(self, verbose=False, keep_temp_files=False):
+    def __init__(self, verbose=False, keep_temp_files=False, target_is_ec=False):
         """ constructor of flashrom_util. help(flashrom_util) for more info """
         self.verbose = verbose
         self.keep_temp_files = keep_temp_files
-        self.bios_layout = {}
+        self.firmware_layout = {}
         self.os_if = chromeos_interface.ChromeOSInterface(True)
         self.os_if.init(tempfile.gettempdir())
         self._target_command = ''
-        self._enable_bios_access()
+        if target_is_ec:
+            self._enable_ec_access()
+        else:
+            self._enable_bios_access()
 
     def _enable_bios_access(self):
         if not self.os_if.target_hosted():
             return
         self._target_command = '-p internal:bus=spi'
+
+    def _enable_ec_access(self):
+        if not self.os_if.target_hosted():
+            return
+        self._target_command = '-p internal:bus=lpc'
 
     def get_temp_filename(self, prefix):
         ''' (internal) Returns name of a temporary file in self.tmp_root '''
@@ -255,7 +263,7 @@ class flashrom_util(object):
         Retrieves a section of data based on section_name in layout_map.
         Raises error if unknown section or invalid layout_map.
         '''
-        pos = self.bios_layout[section_name]
+        pos = self.firmware_layout[section_name]
         if pos[0] >= pos[1] or pos[1] >= len(base_image):
             raise TestError('INTERNAL ERROR: invalid layout map: %s.' %
                             section_name)
@@ -263,11 +271,11 @@ class flashrom_util(object):
 
     def put_section(self, base_image, section_name, data):
         '''
-        Updates a section of data based on section_name in bios_layout.
+        Updates a section of data based on section_name in firmware_layout.
         Raises error if unknown section.
         Returns the full updated image data.
         '''
-        pos = self.bios_layout[section_name]
+        pos = self.firmware_layout[section_name]
         if pos[0] >= pos[1] or pos[1] >= len(base_image):
             raise TestError('INTERNAL ERROR: invalid layout map.')
         if len(data) != pos[1] - pos[0] + 1:
@@ -282,11 +290,11 @@ class flashrom_util(object):
         image = self.read_whole()
         return len(image)
 
-    def set_bios_layout(self, file_name):
+    def set_firmware_layout(self, file_name):
         """get layout read from the BIOS """
 
         scraper = LayoutScraper(self.os_if)
-        self.bios_layout = scraper.get_layout(file_name)
+        self.firmware_layout = scraper.get_layout(file_name)
 
     def read_whole(self):
         '''
@@ -300,7 +308,7 @@ class flashrom_util(object):
 
         self.os_if.run_shell_command(cmd)
         result = open(tmpfn, 'rb').read()
-        self.set_bios_layout(tmpfn)
+        self.set_firmware_layout(tmpfn)
 
         # clean temporary resources
         self.remove_temp_file(tmpfn)
@@ -315,7 +323,7 @@ class flashrom_util(object):
         if write_layout_map:
             layout_map = write_layout_map
         else:
-            layout_map = self.bios_layout
+            layout_map = self.firmware_layout
 
         tmpfn = self.get_temp_filename('wr_')
         open(tmpfn, 'wb').write(base_image)

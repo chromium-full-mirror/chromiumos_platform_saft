@@ -77,7 +77,8 @@ class FlashromHandler(object):
     def init(self, flashrom_util_module,
              chros_if,
              pub_key_file=None,
-             dev_key_path='./'):
+             dev_key_path='./',
+             target='bios'):
         '''Flashrom handler initializer.
 
         Args:
@@ -86,7 +87,12 @@ class FlashromHandler(object):
           pub_key_file - a string, name of the file contaning a public key to
                          use for verifying both existing and new firmware.
         '''
-        self.fum = flashrom_util_module.flashrom_util()
+        if target == 'bios':
+            self.fum = flashrom_util_module.flashrom_util(target_is_ec=False)
+        elif target == 'ec':
+            self.fum = flashrom_util_module.flashrom_util(target_is_ec=True)
+        else:
+            raise FlashromHandlerError("Invalid target.")
         self.chros_if = chros_if
         self.pub_key_file = pub_key_file
         self.dev_key_path = dev_key_path
@@ -107,7 +113,7 @@ class FlashromHandler(object):
 
         if image_file:
             self.image = open(image_file, 'rb').read()
-            self.fum.set_bios_layout(image_file)
+            self.fum.set_firmware_layout(image_file)
         else:
             self.image = self.fum.read_whole()
 
