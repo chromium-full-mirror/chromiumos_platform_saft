@@ -279,21 +279,6 @@ class FirmwareTest(object):
 
         self.chros_if.init(os.path.join(state_root, STATE_SUBDIR), LOG_FILE)
 
-    def _cmp_boot_vector(self, vector1, vector2):
-        '''Compare if the two boot vectors are the same
-
-        Note: a wildcard (*) will match any value.
-
-        '''
-        list1 = vector1.split(cgpt_st.DELIMIT)
-        list2 = vector2.split(cgpt_st.DELIMIT)
-        if len(list1) != len(list2):
-            raise FwError('Boot vectors (%s %s) should be of the same length'
-                          % (vecotr1, vector2))
-        for i in range(len(list1)):
-            if list1[i] != list2[i] and list1[i] != '*' and list2[i] != '*':
-                return False
-        return True
 
     def init(self, progname, chros_if,
              kern_handler=None, state_sequence=None, tpm_handler=None):
@@ -591,7 +576,7 @@ class FirmwareTest(object):
                 self.chros_if.log('startup log contents:')
                 self.chros_if.log(contents)
 
-        if not self._cmp_boot_vector(boot_vector, expected_vector):
+        if not self.chros_if.cmp_boot_vector(boot_vector, expected_vector):
             self.chros_if.log('Error: Wrong boot vector, %s was expected'
                 % expected_vector)
             self.finish_saft(False)

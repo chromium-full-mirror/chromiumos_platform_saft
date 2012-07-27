@@ -414,6 +414,22 @@ class ChromeOSInterface(object):
         state_str = ':'.join(state)
         return state_str
 
+    def cmp_boot_vector(self, vector1, vector2):
+        '''Compare if the two boot vectors are the same
+
+        Note: a wildcard (*) will match any value.
+        '''
+        list1 = vector1.split(':')
+        list2 = vector2.split(':')
+        if len(list1) != len(list2):
+            raise ChromeOSInterfaceError(
+                    'Boot vectors (%s %s) should be of the same length'
+                    % (vecotr1, vector2))
+        for i in range(len(list1)):
+            if list1[i] != list2[i] and list1[i] != '*' and list2[i] != '*':
+                return False
+        return True
+
     def get_writeable_mount_point(self, dev, tmp_dir):
         '''Get mountpoint of the passed in device mounted in read/write mode.
 
