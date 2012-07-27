@@ -45,42 +45,42 @@ CGPT_STATE_SEQ_MANUAL = (
     # Both kernels have tries set to zero and none is successful => recovery.
     # Note: this particular cgpt test must be followed by other normal
     #       cgpt_tests. Otherwise, it will always boot into the recovery mode.
-    (('6:0:0', '7:0:0'),   ('6:0:0', '7:0:0'),   '6:0:1:1:3'),
+    (('6:0:0', '7:0:0'),   ('6:0:0', '7:0:0'),   '6:0:*:1:3'),
     # KERN-A with successful bit and higher priority has precedence.
-    (('3:0:1', '2:15:0'),  ('3:0:1', '2:15:0'),  '1:1:1:0:3'),
+    (('3:0:1', '2:15:0'),  ('3:0:1', '2:15:0'),  '1:1:*:0:3'),
     )
 
 # This cgpt state sequence specifies the steps executed automatically.
 CGPT_STATE_SEQ_AUTO = (
     # KERN-A with successful bit but lower priority. KERN-B has precedence.
-    (('7:0:1', '10:5:0'),  ('7:0:1', '10:4:0'),  '1:1:1:0:5'),
+    (('7:0:1', '10:5:0'),  ('7:0:1', '10:4:0'),  '1:1:*:0:5'),
     # KERN-B with successful bit but lower priority. KERN-A has precedence.
-    (('12:13:0', '9:0:1'), ('12:12:0', '9:0:1'), '1:1:1:0:3'),
+    (('12:13:0', '9:0:1'), ('12:12:0', '9:0:1'), '1:1:*:0:3'),
     # KERN-A with successful bit and higher priority has precedence.
-    (('3:0:1', '2:15:0'),  ('3:0:1', '2:15:0'),  '1:1:1:0:3'),
+    (('3:0:1', '2:15:0'),  ('3:0:1', '2:15:0'),  '1:1:*:0:3'),
     # KERN-B with successful bit and higher priority has precedence.
-    (('3:5:0', '4:0:1'),   ('3:5:0', '4:0:1'),   '1:1:1:0:5'),
+    (('3:5:0', '4:0:1'),   ('3:5:0', '4:0:1'),   '1:1:*:0:5'),
     # KERN-A with higher priority and non-zero tries has precedence.
-    (('6:12:0', '3:14:0'), ('6:11:0', '3:14:0'), '1:1:1:0:3'),
+    (('6:12:0', '3:14:0'), ('6:11:0', '3:14:0'), '1:1:*:0:3'),
     # KERN-B with higher priority and non-zero tries has precedence.
-    (('5:13:0', '9:8:0'),  ('5:13:0', '9:7:0'),  '1:1:1:0:5'),
+    (('5:13:0', '9:8:0'),  ('5:13:0', '9:7:0'),  '1:1:*:0:5'),
     # KERN-A with higher priority but zero tries has no precedence.
-    (('9:0:0', '7:10:0'),  ('9:0:0', '7:9:0'),   '1:1:1:0:5'),
+    (('9:0:0', '7:10:0'),  ('9:0:0', '7:9:0'),   '1:1:*:0:5'),
     # KERN-B with higher priority but zero tries has no precedence.
-    (('6:13:0', '7:0:0'),  ('6:12:0', '7:0:0'),  '1:1:1:0:3'),
+    (('6:13:0', '7:0:0'),  ('6:12:0', '7:0:0'),  '1:1:*:0:3'),
     # Both kernels are successful. KERN-B with higher priority has precedence.
-    (('8:0:1', '9:0:1'),   ('8:0:1', '9:0:1'),   '1:1:1:0:5'),
+    (('8:0:1', '9:0:1'),   ('8:0:1', '9:0:1'),   '1:1:*:0:5'),
     # Both kernels are successful. KERN-A with higher priority has precedence.
-    (('8:0:1', '7:0:1'),   ('8:0:1', '7:0:1'),   '1:1:1:0:3'),
+    (('8:0:1', '7:0:1'),   ('8:0:1', '7:0:1'),   '1:1:*:0:3'),
     )
 
 # This cgpt state sequence only specifies limited steps for test.
 # This is used only during development.
 CGPT_STATE_SEQ_SHORT = (
     # KERN-A with successful bit but lower priority. KERN-B has precedence.
-    (('7:0:1', '10:5:0'),  ('7:0:1', '10:4:0'),  '1:1:1:0:5'),
+    (('7:0:1', '10:5:0'),  ('7:0:1', '10:4:0'),  '1:1:*:0:5'),
     # KERN-B with successful bit but lower priority. KERN-A has precedence.
-    (('12:13:0', '9:0:1'), ('12:12:0', '9:0:1'), '1:1:1:0:3'),
+    (('12:13:0', '9:0:1'), ('12:12:0', '9:0:1'), '1:1:*:0:3'),
     )
 
 # A complete sequence is equal to manual sequence + auto sequence
@@ -92,7 +92,7 @@ CGPT_STATE_SEQ_COMPLETE = CGPT_STATE_SEQ_MANUAL + CGPT_STATE_SEQ_AUTO
 # previous step. Also we can set any cgpt parameters we would like the
 # machine to keep before leaving cgpt tests.
 CGPT_STATE_SEQ_END = (
-    (('3:0:1', '2:5:0'),  ('3:0:1', '2:5:0'),  '1:1:1:0:3'),
+    (('3:0:1', '2:5:0'),  ('3:0:1', '2:5:0'),  '1:1:*:0:3'),
     )
 
 # A test state sequence body dictionary
@@ -267,11 +267,12 @@ class CgptState:
         boot_vector = self.chros_if.boot_state_vector()
         # Get expected boot vector
         expected_boot_vector = self._get_boot_vector(step)
-        boot_flag = (boot_vector == expected_boot_vector)
-        if not boot_flag:
+        matched = self.chros_if.cmp_boot_vector(boot_vector,
+                                                expected_boot_vector)
+        if not matched:
             self.chros_if.log('Error (cgpt step %d): boot vectors %s and %s \
                  do not match' % (step, boot_vector, expected_boot_vector))
-        return boot_flag
+        return matched
 
     def test_loop(self):
         '''Loop through every cgpt test state tuple.
