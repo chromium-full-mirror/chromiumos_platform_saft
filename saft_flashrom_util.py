@@ -59,6 +59,8 @@ class LayoutScraper(object):
         "VBLOCK_B": "VBOOTB",
         "FW_MAIN_A": "FVMAIN",
         "FW_MAIN_B": "FVMAINB",
+        # EC firmware layout
+        "EC_RW": "EC_RW",
         }
 
     def __init__(self, os_if):

@@ -69,10 +69,6 @@ class FlashromHandler(object):
         self.chros_if = None
         self.image = ''
         self.pub_key_file = ''
-        self.fv_sections = {
-            'a': FvSection('VBOOTA', 'FVMAIN'),
-            'b': FvSection('VBOOTB', 'FVMAINB'),
-            }
 
     def init(self, flashrom_util_module,
              chros_if,
@@ -89,8 +85,15 @@ class FlashromHandler(object):
         '''
         if target == 'bios':
             self.fum = flashrom_util_module.flashrom_util(target_is_ec=False)
+            self.fv_sections = {
+                'a': FvSection('VBOOTA', 'FVMAIN'),
+                'b': FvSection('VBOOTB', 'FVMAINB'),
+                }
         elif target == 'ec':
             self.fum = flashrom_util_module.flashrom_util(target_is_ec=True)
+            self.fv_sections = {
+                'rw': FvSection(None, 'EC_RW'),
+                }
         else:
             raise FlashromHandlerError("Invalid target.")
         self.chros_if = chros_if
@@ -119,9 +122,15 @@ class FlashromHandler(object):
 
         for section in self.fv_sections.itervalues():
             for subsection_name in section.names():
+                if not subsection_name:
+                    continue
                 f = open(self.chros_if.state_dir_file(subsection_name), 'wb')
                 f.write(self.fum.get_section(self.image, subsection_name))
                 f.close()
+
+            # If there is no "sig" subsection, skip reading version and flags.
+            if not section.get_sig_name():
+                continue
 
             # Now determine this section's version number.
             vb_section = self.fum.get_section(
