@@ -344,9 +344,13 @@ class FlashromHandler(object):
 
     def set_section_version(self, section, version, flags,
                             write_through=False):
-        '''Re-sign the firmware section using the supplied version number.'''
-        if self.get_section_version(section) == version:
-            return  # No version change, nothing to do.
+        '''
+        Re-sign the firmware section using the supplied version number and
+        flag.
+        '''
+        if (self.get_section_version(section) == version and
+            self.get_section_flags(section) == flags):
+            return  # No version or flag change, nothing to do.
         if version < 0:
             raise FlashromHandlerError(
                 'Attempt to set version %d on section %s' % (version, section))
