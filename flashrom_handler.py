@@ -11,6 +11,7 @@ flashrom chip and to parse the flash rom image.
 See docstring for FlashromHandler class below.
 '''
 
+import hashlib
 import os
 import struct
 
@@ -26,6 +27,7 @@ class FvSection(object):
         self._body_name = body_name
         self._version = -1  # Is not set on construction.
         self._flags = 0  # Is not set on construction.
+        self._sha = None  # Is not set on construction.
 
     def names(self):
         return (self._sig_name, self._body_name)
@@ -42,11 +44,17 @@ class FvSection(object):
     def get_flags(self):
         return self._flags
 
+    def get_sha(self):
+        return self._sha
+
     def set_version(self, version):
         self._version = version
 
     def set_flags(self, flags):
         self._flags = flags
+
+    def set_sha(self, sha):
+        self._sha = sha
 
 class FlashromHandlerError(Exception):
     pass
@@ -127,6 +135,10 @@ class FlashromHandler(object):
                 f = open(self.chros_if.state_dir_file(subsection_name), 'wb')
                 f.write(self.fum.get_section(self.image, subsection_name))
                 f.close()
+
+            s = hashlib.sha1()
+            s.update(self.fum.get_section(self.image, section.get_body_name()))
+            section.set_sha(s.hexdigest())
 
             # If there is no "sig" subsection, skip reading version and flags.
             if not section.get_sig_name():
@@ -342,6 +354,10 @@ class FlashromHandler(object):
         except struct.error, e:
             raise FlashromHandlerError(e)
         return gbb_flags
+
+    def get_section_sha(self, section):
+        '''Retrieve SHA1 hash of a firmware body section'''
+        return self.fv_sections[section].get_sha()
 
     def get_section_version(self, section):
         '''Retrieve version number of a firmware section'''
