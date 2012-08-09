@@ -475,6 +475,30 @@ class ChromeOSInterface(object):
         _, version = struct.unpack_from(preamble_format, blob, kb_size)
         return version
 
+    def retrieve_datakey_version(self, blob):
+        '''Given a blob, retrieve firmware data key version'''
+        header_format = '<8s96sQ'
+        magic, _, version = struct.unpack_from(header_format, blob)
+        if magic != 'CHROMEOS':
+            return -1 # This could be a corrupted version case.
+        return version
+
+    def retrieve_kernel_subkey_version(self, blob):
+        '''Given a blob, retrieve kernel subkey version.
+
+        It is in firmware vblock's preamble.
+        '''
+
+        header_format = '<8s8sQ'
+        preamble_format = '<72sQ'
+        magic, _, kb_size = struct.unpack_from(header_format, blob)
+
+        if magic != 'CHROMEOS':
+            return -1
+
+        _, version = struct.unpack_from(preamble_format, blob, kb_size)
+        return version
+
     def retrieve_preamble_flags(self, blob):
         '''Given a blob, retrieve preamble flags if available.
 

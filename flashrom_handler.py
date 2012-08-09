@@ -28,6 +28,8 @@ class FvSection(object):
         self._version = -1  # Is not set on construction.
         self._flags = 0  # Is not set on construction.
         self._sha = None  # Is not set on construction.
+        self._datakey_version = -1 # Is not set on construction.
+        self._kernel_subkey_version = -1 # Is not set on construction.
 
     def names(self):
         return (self._sig_name, self._body_name)
@@ -47,6 +49,12 @@ class FvSection(object):
     def get_sha(self):
         return self._sha
 
+    def get_datakey_version(self):
+        return self._datakey_version
+
+    def get_kernel_subkey_version(self):
+        return self._kernel_subkey_version
+
     def set_version(self, version):
         self._version = version
 
@@ -55,6 +63,12 @@ class FvSection(object):
 
     def set_sha(self, sha):
         self._sha = sha
+
+    def set_datakey_version(self, version):
+        self._datakey_version = version
+
+    def set_kernel_subkey_version(self, version):
+        self._kernel_subkey_version = version
 
 class FlashromHandlerError(Exception):
     pass
@@ -150,6 +164,10 @@ class FlashromHandler(object):
 
             section.set_version(self.chros_if.retrieve_body_version(vb_section))
             section.set_flags(self.chros_if.retrieve_preamble_flags(vb_section))
+            section.set_datakey_version(
+                self.chros_if.retrieve_datakey_version(vb_section))
+            section.set_kernel_subkey_version(
+                self.chros_if.retrieve_kernel_subkey_version(vb_section))
 
         if not self.pub_key_file:
             self._retrieve_pub_key()
@@ -366,6 +384,14 @@ class FlashromHandler(object):
     def get_section_flags(self, section):
         '''Retrieve preamble flags of a firmware section'''
         return self.fv_sections[section].get_flags()
+
+    def get_section_datakey_version(self, section):
+        '''Retrieve data key version number of a firmware section'''
+        return self.fv_sections[section].get_datakey_version()
+
+    def get_section_kernel_subkey_version(self, section):
+        '''Retrieve kernel subkey version number of a firmware section'''
+        return self.fv_sections[section].get_kernel_subkey_version()
 
     def set_section_version(self, section, version, flags,
                             write_through=False):
