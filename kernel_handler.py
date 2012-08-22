@@ -13,6 +13,7 @@ TMP_FILE_NAME = 'kernel_header_dump'
 # Types of kernel modifications.
 KERNEL_BODY_MOD = 1
 KERNEL_VERSION_MOD = 2
+KERNEL_RESIGN_MOD = 3
 
 
 class KernelHandlerError(Exception):
@@ -43,6 +44,12 @@ class KernelHandler(object):
         data = self.chros_if.read_partition(device, 0x4000)
         return self.chros_if.retrieve_body_version(data)
 
+    def _get_datakey_version(self,device):
+        '''Get datakey version of kernel hosted on the passed in partition.'''
+        # 16 K should be enought to include headers and keys
+        data = self.chros_if.read_partition(device, 0x4000)
+        return self.chros_if.retrieve_datakey_version(data)
+
     def _get_partition_map(self):
         '''Scan `cgpt show <device> output to find kernel devices.'''
         kernel_partitions = re.compile('KERN-([AB])')
@@ -58,20 +65,26 @@ class KernelHandler(object):
             device = self.chros_if.join_part(self.root_dev, line.split()[2])
             part_info['device'] = device
             part_info['version'] = self._get_version(device)
+            part_info['datakey_version'] = self._get_datakey_version(device)
             self.partition_map[label] = part_info
 
     def _modify_kernel(self, section,
                        delta,
-                       modification_type=KERNEL_BODY_MOD):
+                       modification_type=KERNEL_BODY_MOD,
+                       key_path=None):
         '''Modify kernel image on a disk partition.
 
-        This method supports two types of kernel modification. KERNEL_BODY_MOD
+        This method supports three types of kernel modification. KERNEL_BODY_MOD
         just adds the value of delta to the first byte of the kernel blob.
         This might leave the kernel corrupted (as required by the test).
 
         The second type, KERNEL_VERSION_MOD - will use 'delta' as the new
         version number, it will put it in the kernel header, and then will
         resign the kernel blob.
+
+        The third type. KERNEL_RESIGN_MOD - will resign the kernel with keys in
+        argument key_path. If key_path is None, choose dev_key_path as resign
+        key directory.
         '''
         dev = self.partition_map[section]['device']
         cmd_template = 'dd if=%s of=%s bs=4M count=1'
@@ -95,6 +108,20 @@ class KernelHandler(object):
                     kernel_to_write, new_version,
                     os.path.join(self.dev_key_path, 'kernel_data_key.vbprivk'),
                     self.dump_file_name))
+        elif modification_type == KERNEL_RESIGN_MOD:
+            if key_path and os.path.isdir(key_path):
+                resign_key_path = key_path
+            else:
+                resign_key_path = self.dev_key_path
+
+            kernel_to_write = self.dump_file_name + '.new'
+            self.chros_if.run_shell_command(
+                'vbutil_kernel --repack %s '
+                '--signprivate %s --oldblob %s --keyblock %s' % (
+                    kernel_to_write,
+                    os.path.join(resign_key_path, 'kernel_data_key.vbprivk'),
+                    self.dump_file_name,
+                    os.path.join(resign_key_path, 'kernel.keyblock')))
         else:
             return  # Unsupported mode, ignore.
         self.chros_if.run_shell_command(cmd_template % (kernel_to_write, dev))
@@ -111,11 +138,22 @@ class KernelHandler(object):
         '''Return version read from this section blob's header.'''
         return self.partition_map[section.upper()]['version']
 
+    def get_datakey_version(self, section):
+        '''Return datakey version read from this section blob's header.'''
+        return self.partition_map[section.upper()]['datakey_version']
+
     def set_version(self, section, version):
         '''Set version of this kernel blob and re-sign it.'''
         if version < 0:
             raise KernelHandlerError('Bad version value %d' % version)
         self._modify_kernel(section.upper(), version, KERNEL_VERSION_MOD)
+
+    def resign_kernel(self, section, key_path=None):
+        """Resign kernel with original kernel version and keys in key_path."""
+        self._modify_kernel(section.upper(),
+                            self.get_version(section),
+                            KERNEL_RESIGN_MOD,
+                            key_path)
 
     def init(self, chros_if, dev_key_path='.'):
         '''Initialize the kernel handler object.

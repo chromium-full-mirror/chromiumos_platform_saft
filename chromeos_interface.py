@@ -476,7 +476,11 @@ class ChromeOSInterface(object):
         return version
 
     def retrieve_datakey_version(self, blob):
-        '''Given a blob, retrieve firmware data key version'''
+        '''Given a blob, retrieve firmware data key version.
+
+        Currently works for both, firmware and kernel blobs. Returns '-1' in
+        case the version can not be retrieved reliably.
+        '''
         header_format = '<8s96sQ'
         magic, _, version = struct.unpack_from(header_format, blob)
         if magic != 'CHROMEOS':
