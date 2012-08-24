@@ -393,6 +393,40 @@ class FlashromHandler(object):
         '''Retrieve kernel subkey version number of a firmware section'''
         return self.fv_sections[section].get_kernel_subkey_version()
 
+    def _find_ecbin_offset(self, blob):
+        '''Return the offset of EC binary from the given firmware blob'''
+        # The RW firmware is concatenated from u-boot, dtb, and ecbin.
+        # Search the magic of dtb to locate the dtb bloc.
+        dtb_offset = blob.index("\xD0\x0D\xFE\xED\x00")
+        # The dtb size is a 32-bit integer which follows the magic.
+        _, dtb_size = struct.unpack_from(">2L", blob, dtb_offset)
+        ecbin_offset = dtb_offset + dtb_size
+        return ecbin_offset
+
+    def get_section_ecbin(self, section):
+        '''Retrieve EC binary of a firmware section'''
+        subsection_name = self.fv_sections[section].get_body_name()
+        blob = self.fum.get_section(self.image, subsection_name)
+        ecbin_offset = self._find_ecbin_offset(blob)
+        # Remove the pads of ecbin.
+        pad = blob[-1]
+        ecbin = blob[ecbin_offset :].rstrip(pad)
+        return ecbin
+
+    def set_section_ecbin(self, section, ecbin):
+        '''Put the supplied EC binary to the firwmare section.
+
+        Note that the updated firmware image is not signed yet. Should call
+        set_section_version() afterward.
+        '''
+        subsection_name = self.fv_sections[section].get_body_name()
+        old_blob = self.fum.get_section(self.image, subsection_name)
+        ecbin_offset = self._find_ecbin_offset(old_blob)
+        pad = old_blob[-1]
+        pad_size = len(old_blob) - ecbin_offset - len(ecbin)
+        new_blob = old_blob[0 : ecbin_offset] + ecbin + pad * pad_size
+        self.image = self.fum.put_section(self.image, subsection_name, new_blob)
+
     def set_section_version(self, section, version, flags,
                             write_through=False):
         '''
