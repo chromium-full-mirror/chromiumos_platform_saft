@@ -393,6 +393,12 @@ class FlashromHandler(object):
         '''Retrieve kernel subkey version number of a firmware section'''
         return self.fv_sections[section].get_kernel_subkey_version()
 
+    def get_section_body(self, section):
+        '''Retrieve body of a firmware section'''
+        subsection_name = self.fv_sections[section].get_body_name()
+        blob = self.fum.get_section(self.image, subsection_name)
+        return blob
+
     def _find_ecbin_offset(self, blob):
         '''Return the offset of EC binary from the given firmware blob'''
         # The RW firmware is concatenated from u-boot, dtb, and ecbin.
@@ -405,13 +411,17 @@ class FlashromHandler(object):
 
     def get_section_ecbin(self, section):
         '''Retrieve EC binary of a firmware section'''
-        subsection_name = self.fv_sections[section].get_body_name()
-        blob = self.fum.get_section(self.image, subsection_name)
+        blob = self.get_section_body(section)
         ecbin_offset = self._find_ecbin_offset(blob)
         # Remove the pads of ecbin.
         pad = blob[-1]
         ecbin = blob[ecbin_offset :].rstrip(pad)
         return ecbin
+
+    def set_section_body(self, section, blob):
+        '''Put the supplied blob to the body of the firmware section'''
+        subsection_name = self.fv_sections[section].get_body_name()
+        self.image = self.fum.put_section(self.image, subsection_name, blob)
 
     def set_section_ecbin(self, section, ecbin):
         '''Put the supplied EC binary to the firwmare section.
@@ -419,13 +429,12 @@ class FlashromHandler(object):
         Note that the updated firmware image is not signed yet. Should call
         set_section_version() afterward.
         '''
-        subsection_name = self.fv_sections[section].get_body_name()
-        old_blob = self.fum.get_section(self.image, subsection_name)
+        old_blob = self.get_section_body(section)
         ecbin_offset = self._find_ecbin_offset(old_blob)
         pad = old_blob[-1]
         pad_size = len(old_blob) - ecbin_offset - len(ecbin)
         new_blob = old_blob[0 : ecbin_offset] + ecbin + pad * pad_size
-        self.image = self.fum.put_section(self.image, subsection_name, new_blob)
+        self.set_section_body(section, new_blob)
 
     def set_section_version(self, section, version, flags,
                             write_through=False):
