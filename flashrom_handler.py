@@ -406,7 +406,8 @@ class FlashromHandler(object):
         dtb_offset = blob.index("\xD0\x0D\xFE\xED\x00")
         # The dtb size is a 32-bit integer which follows the magic.
         _, dtb_size = struct.unpack_from(">2L", blob, dtb_offset)
-        ecbin_offset = dtb_offset + dtb_size
+        # The ecbin part is aligned to 4-byte.
+        ecbin_offset = (dtb_offset + dtb_size + 3) & ~3
         return ecbin_offset
 
     def get_section_ecbin(self, section):
