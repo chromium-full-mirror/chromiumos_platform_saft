@@ -360,6 +360,25 @@ class ChromeOSInterface(object):
 
         return removable == 1
 
+    def get_internal_disk(self, device):
+        '''Get the internal disk by given the current disk.
+
+        If device is removable device, internal disk is decided by which kind
+        of divice (arm or x86). Otherwise, return device itself.
+
+        device - a string, file name of a storage device or a device partition
+                 (as in /dev/sda[0-9] or /dev/mmcblk0p[0-9]).
+
+        Return internal kernel disk.
+        '''
+        if self.is_removable_device(device):
+            if os.path.exists('/dev/mmcblk1'):
+                return '/dev/mmcblk1'
+            else:
+                return '/dev/sda'
+        else:
+            return device
+
     def get_root_part(self):
         '''Return a string, the name of root device with partition number'''
         return self.run_shell_command_get_output('rootdev -s')[0]

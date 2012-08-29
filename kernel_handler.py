@@ -50,11 +50,20 @@ class KernelHandler(object):
         data = self.chros_if.read_partition(device, 0x4000)
         return self.chros_if.retrieve_datakey_version(data)
 
-    def _get_partition_map(self):
-        '''Scan `cgpt show <device> output to find kernel devices.'''
+    def _get_partition_map(self, internal_disk=True):
+        '''Scan `cgpt show <device> output to find kernel devices.
+
+        Args:
+          internal_disk - decide whether to use internal kernel disk.
+        '''
+        if internal_disk:
+            target_device = self.chros_if.get_internal_disk(self.root_dev)
+        else:
+            target_device = self.root_dev
+
         kernel_partitions = re.compile('KERN-([AB])')
         disk_map = self.chros_if.run_shell_command_get_output(
-            'cgpt show %s' % self.root_dev)
+            'cgpt show %s' % target_device)
 
         for line in disk_map:
             matched_line = kernel_partitions.search(line)
@@ -62,7 +71,7 @@ class KernelHandler(object):
                 continue
             label = matched_line.group(1)
             part_info = {}
-            device = self.chros_if.join_part(self.root_dev, line.split()[2])
+            device = self.chros_if.join_part(target_device, line.split()[2])
             part_info['device'] = device
             part_info['version'] = self._get_version(device)
             part_info['datakey_version'] = self._get_datakey_version(device)
@@ -155,7 +164,7 @@ class KernelHandler(object):
                             KERNEL_RESIGN_MOD,
                             key_path)
 
-    def init(self, chros_if, dev_key_path='.'):
+    def init(self, chros_if, dev_key_path='.', internal_disk=True):
         '''Initialize the kernel handler object.
 
         Input argument is a ChromeOS interface object reference.
@@ -164,4 +173,4 @@ class KernelHandler(object):
         self.dev_key_path = dev_key_path
         self.root_dev = chros_if.get_root_dev()
         self.dump_file_name = chros_if.state_dir_file(TMP_FILE_NAME)
-        self._get_partition_map()
+        self._get_partition_map(internal_disk)
