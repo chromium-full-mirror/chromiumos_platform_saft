@@ -363,6 +363,15 @@ class FlashromHandler(object):
                 'Attempt at using an uninitialized object')
         open(filename, 'w').write(self.image)
 
+    def dump_partial(self, subsection_name, filename):
+        '''Write the subsection part into a file.'''
+
+        if not self.image:
+            raise FlashromHandlerError(
+                'Attempt at using an uninitialized object')
+        blob = self.fum.get_section(self.image, subsection_name)
+        open(filename, 'w').write(blob)
+
     def get_gbb_flags(self):
         '''Retrieve the GBB flags'''
         gbb_header_format = '<12sL'
@@ -424,7 +433,7 @@ class FlashromHandler(object):
         subsection_name = self.fv_sections[section].get_body_name()
         self.image = self.fum.put_section(self.image, subsection_name, blob)
 
-    def set_section_ecbin(self, section, ecbin):
+    def set_section_ecbin(self, section, ecbin, write_through=False):
         '''Put the supplied EC binary to the firwmare section.
 
         Note that the updated firmware image is not signed yet. Should call
@@ -436,6 +445,11 @@ class FlashromHandler(object):
         pad_size = len(old_blob) - ecbin_offset - len(ecbin)
         new_blob = old_blob[0 : ecbin_offset] + ecbin + pad * pad_size
         self.set_section_body(section, new_blob)
+        if write_through:
+            subsection_name = self.fv_sections[section].get_body_name()
+            self.dump_partial(subsection_name,
+                              self.chros_if.state_dir_file(subsection_name))
+            self.fum.write_partial(self.image, (subsection_name, ))
 
     def set_section_version(self, section, version, flags,
                             write_through=False):
