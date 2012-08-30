@@ -377,7 +377,7 @@ class ChromeOSInterface(object):
             else:
                 return '/dev/sda'
         else:
-            return device
+            return self.strip_part(device)
 
     def get_root_part(self):
         '''Return a string, the name of root device with partition number'''

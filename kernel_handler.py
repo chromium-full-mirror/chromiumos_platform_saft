@@ -57,7 +57,8 @@ class KernelHandler(object):
           internal_disk - decide whether to use internal kernel disk.
         '''
         if internal_disk:
-            target_device = self.chros_if.get_internal_disk(self.root_dev)
+            target_device = self.chros_if.get_internal_disk(
+                    self.chros_if.get_root_part())
         else:
             target_device = self.root_dev
 
