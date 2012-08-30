@@ -419,6 +419,16 @@ class FlashromHandler(object):
         ecbin_offset = (dtb_offset + dtb_size + 3) & ~3
         return ecbin_offset
 
+    def _find_ecbin_size_offset_on_dtb(self, blob):
+        '''Return the offset of EC binary size on the DTB blob'''
+        # We now temporarily use this hack to find the offset.
+        # TODO(waihong@chromium.org): Should use fdtget to get the field and
+        # fdtput to change it.
+        dtb_offset = blob.index("\xD0\x0D\xFE\xED\x00")
+        prop_offset = blob.index("blob boot,dtb,ecbin", dtb_offset) + 0x18
+        ecbin_size_offset = blob.index("ecbin", prop_offset) + 0x18
+        return ecbin_size_offset
+
     def get_section_ecbin(self, section):
         '''Retrieve EC binary of a firmware section'''
         blob = self.get_section_body(section)
@@ -439,11 +449,25 @@ class FlashromHandler(object):
         Note that the updated firmware image is not signed yet. Should call
         set_section_version() afterward.
         '''
+        # Remove unncessary padding bytes.
+        pad = '\xff'
+        ecbin_align = 4
+        ecbin = ecbin.rstrip(pad)
+        ecbin += pad * ((ecbin_align - 1) - (len(ecbin) - 1) % ecbin_align)
+        ecbin_size = len(ecbin)
+
+        # Put the ecbin into the firmware body.
         old_blob = self.get_section_body(section)
         ecbin_offset = self._find_ecbin_offset(old_blob)
         pad = old_blob[-1]
-        pad_size = len(old_blob) - ecbin_offset - len(ecbin)
+        pad_size = len(old_blob) - ecbin_offset - ecbin_size
         new_blob = old_blob[0 : ecbin_offset] + ecbin + pad * pad_size
+
+        # Modify the ecbin size on dtb.
+        size_offset = self._find_ecbin_size_offset_on_dtb(new_blob)
+        new_blob = (new_blob[0 : size_offset] + struct.pack('>L', ecbin_size) +
+                    new_blob[size_offset + 4 :])
+
         self.set_section_body(section, new_blob)
         if write_through:
             subsection_name = self.fv_sections[section].get_body_name()
